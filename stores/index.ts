@@ -2,7 +2,6 @@
 export { useSidebarStore } from './sidebarStore';
 export { useTimetableStore } from './timetableStore';
 export { useNoteStore } from './noteStore';
-export { useCourseStore } from './courseStore';
 export { useExcalidrawNoteStore } from './excalidrawNoteStore';
 export type {
   SidebarStore,
@@ -14,6 +13,7 @@ export type {
   Note,
   NoteContext,
   JSONContent,
+  CourseWithSessions,
   DatabaseTimetable,
   DatabaseChat,
   DatabaseNote,

@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { MoreHorizontal, Edit2, Trash2 } from "lucide-react";
-import { useTimetableStore } from "@/stores/timetableStore";
+import { useChatStore } from "@/stores/chatStore";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,14 +19,13 @@ interface ChatItemProps {
   chat: Chat;
 }
 
-export function ChatItem({ chat }: ChatItemProps) {
-  const { 
-    activeChatId, 
-    setActiveChat, 
-    renameChat, 
-    deleteChat,
-    renamingChats 
-  } = useTimetableStore();
+export const ChatItem = React.memo(function ChatItem({ chat }: ChatItemProps) {
+  // Use selective subscriptions to prevent unnecessary rerenders
+  const activeChatId = useChatStore((state) => state.activeChatId);
+  const setActiveChat = useChatStore((state) => state.setActiveChat);
+  const renameChat = useChatStore((state) => state.renameChat);
+  const deleteChat = useChatStore((state) => state.deleteChat);
+  const renamingChats = useChatStore((state) => state.renamingChats);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(chat.name);
@@ -134,4 +133,4 @@ export function ChatItem({ chat }: ChatItemProps) {
       </DropdownMenu>
     </div>
   );
-}
+});

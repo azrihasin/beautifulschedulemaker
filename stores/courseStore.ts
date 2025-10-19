@@ -1,146 +1,128 @@
 import { create } from "zustand";
-import { persist, createJSONStorage } from "zustand/middleware";
 import { v4 as uuidv4 } from "uuid";
+import { CourseSession, CourseWithSessions } from "./types";
+import type { CourseWithSessionsInput } from "../lib/supabase/database.types";
+import { persist, createPersistConfig } from "../lib/zustand-indexeddb-persistence";
 
-// Local types for courses (no database dependency)
-export interface CourseSession {
-  session_id: string;
-  day: string;
-  start_time: string;
-  end_time: string;
-  location?: string;
-}
-
-export interface CourseWithSessions {
-  id: string;
-  code: string;
-  name: string;
-  color: string;
-  timetable_id: string;
-  sessions: CourseSession[];
-  created_at: Date;
-  updated_at: Date;
-}
-
-// Check if we're in a browser environment
-const isBrowser = typeof window !== 'undefined';
-
-// Course store interface
 interface CourseStore {
   courses: CourseWithSessions[];
   isLoading: boolean;
   error: string | null;
   
-  // Actions
-  addCourse: (course: Omit<CourseWithSessions, 'id' | 'created_at' | 'updated_at'>) => CourseWithSessions;
-  deleteCourse: (id: string) => void;
-  updateCourse: (updatedCourse: CourseWithSessions) => void;
+  addCourse: (timetableId: string, course: CourseWithSessionsInput) => CourseWithSessions;
+  addCoursesBulk: (timetableId: string, courses: CourseWithSessionsInput[]) => CourseWithSessions[];
+  deleteCourse: (timetableId: string, courseCode: string) => void;
+  updateCourse: (timetableId: string, courseId: string, updates: Partial<CourseWithSessions>) => void;
+  getCourses: (timetableId: string) => CourseWithSessions[];
   resetCourses: () => void;
-  loadCourses: (timetableId: string) => void;
   setError: (error: string | null) => void;
   clearError: () => void;
 }
 
-// Helper function to create a new course with timestamps
-const createCourse = (course: Omit<CourseWithSessions, 'id' | 'created_at' | 'updated_at'>): CourseWithSessions => ({
+const createCourse = (course: Omit<CourseWithSessions, 'id' | 'createdAt' | 'updatedAt'>): CourseWithSessions => ({
   ...course,
   id: uuidv4(),
-  created_at: new Date(),
-  updated_at: new Date(),
+  createdAt: new Date(),
+  updatedAt: new Date(),
 });
 
-export const useCourseStore = create<CourseStore>()(isBrowser ? persist(
-  (set, get) => ({
-    courses: [],
-    isLoading: false,
-    error: null,
+export const useCourseStore = create<CourseStore>()(
+  persist(
+    (set, get) => ({
+      courses: [],
+      isLoading: false,
+      error: null,
 
-    setError: (error: string | null) => set({ error }),
-    clearError: () => set({ error: null }),
+      setError: (error: string | null) => set({ error }),
+      clearError: () => set({ error: null }),
 
-    loadCourses: (timetableId: string): void => {
-      set({ isLoading: true, error: null });
-      // Filter courses by timetable_id from local state
-      const currentCourses = get().courses.filter(course => course.timetable_id === timetableId);
-      set({ courses: currentCourses, isLoading: false });
-    },
+      getCourses: (timetableId: string): CourseWithSessions[] => {
+        const { courses } = get();
+        return courses.filter(course => course.timetable_id === timetableId);
+      },
 
-    addCourse: (course: Omit<CourseWithSessions, 'id' | 'created_at' | 'updated_at'>): CourseWithSessions => {
-      set({ isLoading: true, error: null });
-      
-      // Ensure sessions have session_id
-      const courseWithSessionIds = {
-        ...course,
-        sessions: course.sessions.map(session => ({
-          ...session,
-          session_id: session.session_id || uuidv4()
-        }))
-      };
+      addCourse: (timetableId: string, course: CourseWithSessionsInput): CourseWithSessions => {
+        set({ isLoading: true, error: null });
+        
+        const courseWithSessionIds = {
+          ...course,
+          timetable_id: timetableId,
+          sessions: course.sessions.map(session => ({
+            ...session,
+            session_id: session.session_id || uuidv4()
+          }))
+        };
 
-      const newCourse = createCourse(courseWithSessionIds);
-      set((state) => ({ 
-        courses: [...state.courses, newCourse],
-        isLoading: false 
-      }));
+        const newCourse = createCourse(courseWithSessionIds);
+        set((state) => ({ 
+          courses: [...state.courses, newCourse],
+          isLoading: false 
+        }));
 
-      return newCourse;
-    },
+        return newCourse;
+      },
 
-    updateCourse: (updatedCourse: CourseWithSessions): void => {
-      set({ isLoading: true, error: null });
-      
-      const courseWithUpdatedTime = {
-        ...updatedCourse,
-        updated_at: new Date()
-      };
+      addCoursesBulk: (timetableId: string, courses: CourseWithSessionsInput[]): CourseWithSessions[] => {
+        set({ isLoading: true, error: null });
+        
+        try {
+          const newCourses = courses.map(course => {
+            const courseWithSessionIds = {
+              ...course,
+              timetable_id: timetableId,
+              sessions: course.sessions.map(session => ({
+                ...session,
+                session_id: session.session_id || uuidv4()
+              }))
+            };
+            return createCourse(courseWithSessionIds);
+          });
 
-      set((state) => ({
-        courses: state.courses.map((course) =>
-          course.id === updatedCourse.id ? courseWithUpdatedTime : course
-        ),
-        isLoading: false
-      }));
-    },
+          set((state) => ({ 
+            courses: [...state.courses, ...newCourses],
+            isLoading: false 
+          }));
 
-    deleteCourse: (id: string): void => {
-      set({ isLoading: true, error: null });
-      set((state) => ({
-        courses: state.courses.filter((course) => course.id !== id),
-        isLoading: false
-      }));
-    },
+          return newCourses;
+        } catch (error) {
+          set({ 
+            error: error instanceof Error ? error.message : 'Failed to add courses in bulk',
+            isLoading: false 
+          });
+          return [];
+        }
+      },
 
-    resetCourses: (): void => {
-      set({ isLoading: true, error: null });
-      // Clear courses state and force localStorage update
-      set({ courses: [], isLoading: false });
-    },
-  }),
-  {
-    name: 'course-store',
-    storage: createJSONStorage(() => localStorage),
-    partialize: (state) => ({
-      courses: state.courses,
-      // Don't persist loading states and errors
+      updateCourse: (timetableId: string, courseId: string, updates: Partial<CourseWithSessions>): void => {
+        set({ isLoading: true, error: null });
+        
+        set((state) => ({
+          courses: state.courses.map((course) =>
+            course.code === courseId && course.timetable_id === timetableId
+              ? { ...course, ...updates, updatedAt: new Date() }
+              : course
+          ),
+          isLoading: false
+        }));
+      },
+
+      deleteCourse: (timetableId: string, courseCode: string): void => {
+        set((state) => ({
+          courses: state.courses.filter((course) => 
+            !(course.code === courseCode && course.timetable_id === timetableId)
+          ),
+          isLoading: false,
+          error: null
+        }));
+      },
+
+      resetCourses: (): void => {
+        set({ isLoading: true, error: null });
+        set({ courses: [], isLoading: false });
+      },
     }),
-  }
-) : (set, get) => ({
-  courses: [],
-  isLoading: false,
-  error: null,
-  setError: (error: string | null) => set({ error }),
-  clearError: () => set({ error: null }),
-  loadCourses: (timetableId: string) => {},
-  addCourse: (course: Omit<CourseWithSessions, 'id' | 'created_at' | 'updated_at'>): CourseWithSessions => {
-    throw new Error('Not available in SSR');
-  },
-  updateCourse: (updatedCourse: CourseWithSessions) => {
-    throw new Error('Not available in SSR');
-  },
-  deleteCourse: (id: string) => {
-    throw new Error('Not available in SSR');
-  },
-  resetCourses: () => {
-    throw new Error('Not available in SSR');
-  },
-}));
+    createPersistConfig("courses", {
+      partialize: (state) => ({ courses: state.courses }),
+    })
+  )
+);

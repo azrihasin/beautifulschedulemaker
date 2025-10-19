@@ -4,16 +4,20 @@ import React from "react";
 import { Button } from "@/components/ui/button";
 import { useSidebarStore } from "@/stores/sidebarStore";
 import { useTimetableStore } from "@/stores/timetableStore";
+import { useChatStore } from "@/stores/chatStore";
 import { Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function AddTimetableButton() {
   const { isCollapsed } = useSidebarStore();
-  const { createTimetable, isLoading } = useTimetableStore();
+  const { addTimetable, isLoading } = useTimetableStore();
+  const { clearActiveChat } = useChatStore();
 
   const handleCreateTimetable = async () => {
     try {
-      await createTimetable();
+      await addTimetable();
+      // Clear active chat to show empty chat state for new timetable
+      clearActiveChat();
     } catch (error) {
       console.error("Failed to create timetable:", error);
       // Error handling will be managed by the store

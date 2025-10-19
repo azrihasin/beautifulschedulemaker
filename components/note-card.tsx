@@ -59,14 +59,14 @@ export function NoteCard({ note, onClick, className }: NoteCardProps) {
           {/* Metadata */}
           <div className="flex items-center justify-between text-xs text-gray-400 mt-auto">
             <span>
-              {note.updatedAt.toLocaleDateString('en-US', {
+              {new Date(note.updatedAt).toLocaleDateString('en-US', {
                 month: 'short',
                 day: 'numeric',
-                year: note.updatedAt.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined
+                year: new Date(note.updatedAt).getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined
               })}
             </span>
             <span>
-              {note.updatedAt.toLocaleTimeString('en-US', {
+              {new Date(note.updatedAt).toLocaleTimeString('en-US', {
                 hour: 'numeric',
                 minute: '2-digit',
                 hour12: true

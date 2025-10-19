@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { PlusIcon } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { useCourseStore } from "@/stores/courseStore";
+import { useTimetableStore } from "@/stores/timetableStore";
 import { createCourseForCurrentTimetable } from "@/lib/course-timetable-helpers";
 import moment from "moment";
 import { toast } from "sonner";
@@ -25,6 +26,7 @@ const DAYS_OF_WEEK = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 
 export default function AddJsonDialog({ isOpen, onClose, courseId }: any) {
   const { courses, updateCourse, resetCourses } = useCourseStore();
+  const { activeTimetableId } = useTimetableStore();
   const [formData, setFormData] = useState({
     code: "",
     name: "",
@@ -72,7 +74,19 @@ export default function AddJsonDialog({ isOpen, onClose, courseId }: any) {
     if (hasError) return;
 
     if (courseId) {
-      updateCourse({ ...formData, id: courseId });
+      if (!activeTimetableId) {
+        toast.error('No active timetable found');
+        return;
+      }
+      // Add session_id to sessions for updateCourse
+      const formDataWithSessionIds = {
+        ...formData,
+        sessions: formData.sessions.map((session: any) => ({
+          ...session,
+          session_id: session.session_id || crypto.randomUUID()
+        }))
+      };
+      updateCourse(activeTimetableId, courseId, formDataWithSessionIds);
     } else {
       try {
         await createCourseForCurrentTimetable(formData);

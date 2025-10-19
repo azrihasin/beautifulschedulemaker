@@ -3,9 +3,7 @@ import React, { useEffect, useRef, useState } from "react";
 import Timetable from "@/components/timetable";
 import CourseDialog from "@/components/course-dialog";
 import { useCourseStore } from "@/stores/courseStore";
-import AuthDialog from "@/components/auth-dialog";
-import { createClient } from "@/lib/supabase/client";
-import { UserAvatar } from "@/components/user-avatar";
+
 import { Card, CardContent } from "@/components/ui/card";
 import AddJsonDialog from "@/components/add-json-dialog";
 import CopyJsonDialog from "@/components/copy-json-dialog";
@@ -23,16 +21,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ChevronDownIcon, Menu, LogIn, RotateCcw } from "lucide-react";
-import { CourseChatbot } from "@/components/course-chatbot";
-import { TimetableChatbot } from "@/components/timetable-chatbot";
+import { ChevronDownIcon } from "lucide-react";
+import { Chatbot } from "@/components/chatbot";
 import { cn } from "@/lib/utils";
-import {
-  CollapsibleSidebar,
-  MobileSidebarOverlay,
-} from "@/components/collapsible-sidebar";
 import { useTimetableStore } from "@/stores/timetableStore";
-import { useSidebarStore } from "@/stores/sidebarStore";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { LoadingSkeleton } from "@/components/ui/loading-states";
 import { initializeCoursesForTimetable } from "@/lib/course-timetable-helpers";
@@ -48,6 +40,7 @@ import {
 } from "@/components/ui/resizable";
 import { useExcalidrawNoteStore } from "@/stores/excalidrawNoteStore";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { streamText } from "@/lib/chrome-ai";
 
 const deviceModels = [
   {
@@ -263,13 +256,11 @@ const deviceModels = [
 ];
 export default function Home() {
   const courses = useCourseStore((state) => state.courses);
-  const setCourses = useCourseStore((state) => state.setCourses);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isJsonDialogOpen, setIsJsonDialogOpen] = useState(false);
   const [isCopyJsonDialogOpen, setIsCopyJsonDialogOpen] = useState(false);
   const [isCourseListDialogOpen, setIsCourseListDialogOpen] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [loginDialog, setLoginDialog] = useState(false);
+
   const [settingsMode, setSettingsMode] = useState(false);
   const [cropperSize, setCropperSize] = useState({ width: 100, height: 500 });
   const containerRef = useRef<HTMLDivElement>(null);
@@ -277,8 +268,8 @@ export default function Home() {
   const [zoom, setZoom] = useState(1);
   const [isSaveTimetableDialogOpen, setIsSaveTimetableDialogOpen] =
     useState(false);
-  const [useChatInterface, setUseChatInterface] = useState(false);
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [useChatInterface, setUseChatInterface] = useState(true);
+
 
   type ViewMode = "timetable" | "note-list" | "note-editor";
   const [currentView, setCurrentView] = useState<ViewMode>("timetable");
@@ -287,6 +278,8 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<"timetable" | "note-list">(
     "timetable"
   );
+  const [isAiStreaming, setIsAiStreaming] = useState(false);
+  const [aiResponse, setAiResponse] = useState("");
 
   const { loadNotes, createNote, updateNote } = useExcalidrawNoteStore();
 
@@ -388,7 +381,7 @@ export default function Home() {
         if (newNoteId) {
           setSelectedNoteId(newNoteId);
           savedNoteId = newNoteId;
-          savedNote = { id: newNoteId }; // Create a minimal object for success check
+          savedNote = { id: newNoteId };
         }
       }
 
@@ -411,7 +404,6 @@ export default function Home() {
 
       const { toast } = await import("sonner");
 
-      // Only show user-friendly error message, don't re-throw
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error occurred";
 
@@ -425,32 +417,34 @@ export default function Home() {
           onClick: () => handleSaveNote(title, sceneData),
         },
       });
-
-      // Don't re-throw the error to prevent null errors from propagating
     }
   };
 
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
+
+
+  const handleAiStream = async (prompt: string = "Hello, how are you") => {
+    setIsAiStreaming(true);
+    setAiResponse("");
+
     try {
-      await refreshFromDatabase();
-      await loadTimetables();
-      
-      const { toast } = await import("sonner");
-      toast.success("Data refreshed successfully", {
-        description: "Timetables and courses have been updated.",
-        duration: 2000,
+      const result = await streamText({
+        prompt: prompt,
       });
+
+      for await (const chunk of result.textStream) {
+        setAiResponse((prev) => prev + chunk);
+        console.log(chunk);
+      }
     } catch (error) {
-      console.error("Error refreshing data:", error);
-      
+      console.error("Error streaming AI response:", error);
+
       const { toast } = await import("sonner");
-      toast.error("Failed to refresh data", {
+      toast.error("AI streaming failed", {
         description: "Please try again later.",
         duration: 3000,
       });
     } finally {
-      setIsRefreshing(false);
+      setIsAiStreaming(false);
     }
   };
 
@@ -463,23 +457,31 @@ export default function Home() {
     isLoading,
     error,
   } = useTimetableStore();
-  const { isCollapsed } = useSidebarStore();
   const [loadingError, setLoadingError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isAuthenticated && activeTimetableId) {
+    if (activeTimetableId) {
       initializeCoursesForTimetable(activeTimetableId).catch((error) => {
         console.error("Failed to load courses for timetable:", error);
       });
     }
-  }, [activeTimetableId, isAuthenticated]);
+  }, [activeTimetableId]);
 
-  // Set iPhone 16 Pro Max as the default device
-  const [selectedDevice, setSelectedDevice] = useState(deviceModels[0]); // iPhone 16 Pro Max
-  // Default dimensions scaled down by factor of 4 (iPhone 16 Pro Max: 1320x2868)
+  useEffect(() => {
+    if (loadTimetables) {
+      loadTimetables().catch((error) => {
+        console.error("Failed to load timetables:", error);
+        setLoadingError(
+          error instanceof Error ? error.message : "Failed to load timetables"
+        );
+      });
+    }
+  }, [loadTimetables]);
+
+  const [selectedDevice, setSelectedDevice] = useState(deviceModels[0]);
   const [containerDimensions, setContainerDimensions] = useState({
-    width: 330, // 1320 / 4
-    height: 717, // 2868 / 4
+    width: 330,
+    height: 717,
   });
 
   const { captureElement, downloadImage, copyToClipboard } = useScreenshot();
@@ -495,8 +497,7 @@ export default function Home() {
   const handleDeviceSelect = (device: (typeof deviceModels)[0]) => {
     setSelectedDevice(device);
 
-    // Scale down to create a smaller version while maintaining aspect ratio
-    const scaleFactor = 4; // Increased from 3 to make it smaller
+    const scaleFactor = 4;
     const scaledWidth = Math.round(device.width / scaleFactor);
     const scaledHeight = Math.round(device.height / scaleFactor);
     setContainerDimensions({ width: scaledWidth, height: scaledHeight });
@@ -536,63 +537,10 @@ export default function Home() {
     }
   };
 
-  const [hasLoadedTimetables, setHasLoadedTimetables] = useState(false);
-
-  useEffect(() => {
-    const supabase = createClient();
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setIsAuthenticated(!!session);
-
-      if (session && loadTimetables && !hasLoadedTimetables) {
-        loadTimetables()
-          .then(() => {
-            setHasLoadedTimetables(true);
-          })
-          .catch(console.error);
-      }
-    });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      setIsAuthenticated(!!session);
-
-      if (event === "SIGNED_IN" && session && loadTimetables) {
-        loadTimetables()
-          .then(() => {
-            setHasLoadedTimetables(true);
-          })
-          .catch((error) => {
-            console.error("Failed to load timetables:", error);
-            setLoadingError(
-              error instanceof Error
-                ? error.message
-                : "Failed to load timetables"
-            );
-          });
-      } else if (event === "SIGNED_OUT") {
-        setHasLoadedTimetables(false);
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, [loadTimetables, hasLoadedTimetables]);
-
   return (
     <div>
-      <div className="flex h-screen">
-        <ErrorBoundary>
-          <CollapsibleSidebar />
-          <MobileSidebarOverlay />
-        </ErrorBoundary>
-
-        <div
-          className={cn(
-            "flex flex-col lg:flex-row flex-1 transition-all duration-300",
-            "lg:ml-0"
-          )}
-        >
+      <div className="h-screen">
+        <div className="flex flex-col lg:flex-row h-full">
           <ResizablePanelGroup
             direction="horizontal"
             className="hidden lg:flex flex-1 h-full relative z-50"
@@ -602,25 +550,6 @@ export default function Home() {
               className="flex flex-col relative z-50"
             >
               <div className="absolute top-4 left-4 z-10 flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    const sidebarStore = useSidebarStore.getState();
-                    if (sidebarStore?.toggleSidebar) {
-                      sidebarStore.toggleSidebar();
-                    }
-                  }}
-                  className={cn(
-                    "lg:hidden flex items-center justify-center w-10 h-10",
-                    "bg-[var(--color-background)]/90 backdrop-blur-sm rounded-lg",
-                    "border hover:bg-accent hover:text-accent-foreground",
-                    "transition-colors duration-200",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  )}
-                  aria-label="Toggle sidebar"
-                >
-                  <Menu className="h-5 w-5" />
-                </button>
-
                 <div className="flex items-center gap-2 bg-white/90 backdrop-blur-sm rounded-lg p-1 border border-gray-200">
                   <button
                     onClick={() => setUseChatInterface(true)}
@@ -647,34 +576,13 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Chat Interface */}
               {useChatInterface && !settingsMode && (
                 <div className="flex-1 p-4 pt-16">
                   <div className="h-full max-w-2xl mx-auto">
-                    {/* Chatbot with transparent background and full height */}
                     <div className="bg-transparent h-[calc(100vh-100px)] w-full">
                       {isLoading ? (
                         <div className="p-6">
                           <LoadingSkeleton lines={5} />
-                        </div>
-                      ) : !isAuthenticated ? (
-                        <div className="p-6 flex flex-col items-center justify-center h-full">
-                          <div className="text-center max-w-md">
-                            <h3 className="text-lg font-medium mb-2">
-                              Sign in to manage your timetables
-                            </h3>
-                            <p className="text-sm text-gray-600 mb-4">
-                              Create an account or sign in to save and manage
-                              your class schedules
-                            </p>
-                            <button
-                              onClick={() => setLoginDialog(true)}
-                              className="inline-flex items-center px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors"
-                            >
-                              <LogIn className="w-4 h-4 mr-2" />
-                              Sign in
-                            </button>
-                          </div>
                         </div>
                       ) : loadingError || error ? (
                         <div className="p-6 text-center">
@@ -696,14 +604,13 @@ export default function Home() {
                           </div>
                         </div>
                       ) : (
-                        <TimetableChatbot className="h-full" />
+                        <Chatbot className="h-full" />
                       )}
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Traditional Button Interface */}
               {!useChatInterface && !settingsMode && (
                 <div className="flex flex-col items-center justify-center flex-1">
                   <div className="flex flex-col items-center justify-center w-2xl pr-4">
@@ -798,9 +705,35 @@ export default function Home() {
                               📋
                               <span className="font-geist">Copy</span>
                             </button>
+
+                            <button
+                              onClick={() => handleAiStream()}
+                              disabled={isAiStreaming}
+                              className="flex items-center text-primary text-sm font-medium rounded-2xl px-3 py-2 border border-input-border hover:bg-input-hover cursor-pointer transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-ring bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              🤖
+                              <span className="font-geist">
+                                {isAiStreaming ? "Streaming..." : "Test AI"}
+                              </span>
+                            </button>
                           </div>
                         </div>
                       </div>
+
+                      {aiResponse && (
+                        <div className="w-full flex justify-start mt-4">
+                          <div className="w-full max-w-[51rem] overflow-visible">
+                            <div className="bg-white border border-input-border rounded-2xl p-4">
+                              <h3 className="text-sm font-medium text-primary mb-2">
+                                AI Response:
+                              </h3>
+                              <div className="text-sm text-gray-700 whitespace-pre-wrap">
+                                {aiResponse}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -822,10 +755,6 @@ export default function Home() {
                 </div>
               )}
 
-              <AuthDialog
-                isOpen={loginDialog}
-                onClose={() => setLoginDialog(false)}
-              />
               <CourseDialog
                 isOpen={isDialogOpen}
                 onClose={() => setIsDialogOpen(false)}
@@ -851,7 +780,7 @@ export default function Home() {
 
             <ResizableHandle
               withHandle
-              className="w-2 bg-gray-200 hover:bg-gray-300 transition-colors z-50"
+              className="w-2 z-50"
             />
 
             <ResizablePanel
@@ -903,46 +832,33 @@ export default function Home() {
                         Notes
                       </TabsTrigger>
                     </TabsList>
-                    
+
                     <div className="flex items-center gap-3">
-                      <button
-                        onClick={handleRefresh}
-                        disabled={isRefreshing}
-                        className="flex items-center justify-center w-8 h-8 rounded-lg border border-input-border hover:bg-input-hover transition-all duration-200 bg-white disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        title="Refresh data"
-                      >
-                        <RotateCcw 
-                          className={`h-4 w-4 text-muted-foreground ${
-                            isRefreshing ? 'animate-spin' : ''
-                          }`} 
-                        />
-                      </button>
-                      
                       {activeTab === "timetable" && (
                         <DropdownMenu>
-                        <DropdownMenuTrigger className="flex items-center text-primary text-sm font-medium rounded-2xl px-3 py-2 border border-input-border hover:bg-input-hover cursor-pointer transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-ring bg-white">
-                          📱
-                          <span className="ml-1">{selectedDevice.model}</span>
-                          <ChevronDownIcon className="ml-2 h-4 w-4" />
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-64">
-                          {deviceModels.map((device) => (
-                            <DropdownMenuItem
-                              key={device.model}
-                              onClick={() => handleDeviceSelect(device)}
-                              className="cursor-pointer"
-                            >
-                              <div className="flex flex-col">
-                                <span className="font-medium">
-                                  {device.model}
-                                </span>
-                                <span className="text-xs text-muted-foreground">
-                                  {device.width} × {device.height}
-                                </span>
-                              </div>
-                            </DropdownMenuItem>
-                          ))}
-                        </DropdownMenuContent>
+                          <DropdownMenuTrigger className="flex items-center text-primary text-sm font-medium rounded-2xl px-3 py-2 border border-input-border hover:bg-input-hover cursor-pointer transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-ring bg-white">
+                            📱
+                            <span className="ml-1">{selectedDevice.model}</span>
+                            <ChevronDownIcon className="ml-2 h-4 w-4" />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-64">
+                            {deviceModels.map((device) => (
+                              <DropdownMenuItem
+                                key={device.model}
+                                onClick={() => handleDeviceSelect(device)}
+                                className="cursor-pointer"
+                              >
+                                <div className="flex flex-col">
+                                  <span className="font-medium">
+                                    {device.model}
+                                  </span>
+                                  <span className="text-xs text-muted-foreground">
+                                    {device.width} × {device.height}
+                                  </span>
+                                </div>
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
                         </DropdownMenu>
                       )}
                     </div>
@@ -987,7 +903,7 @@ export default function Home() {
                             className={cn(
                               "w-full flex-1 rounded-2xl overflow-hidden",
                               "transition-all duration-300 ease-in-out",
-                              "px-2 sm:px-0", // Mobile padding
+                              "px-2 sm:px-0",
                               isTransitioning
                                 ? "opacity-0 scale-95"
                                 : "opacity-100 scale-100"
@@ -1022,18 +938,6 @@ export default function Home() {
           <div className="flex flex-col lg:hidden flex-1">
             <div className="w-full flex flex-col relative">
               <div className="absolute top-4 left-4 z-10 flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    const sidebarStore = useSidebarStore.getState();
-                    if (sidebarStore?.toggleSidebar) {
-                      sidebarStore.toggleSidebar();
-                    }
-                  }}
-                  className="lg:hidden p-2 rounded-md bg-white/80 backdrop-blur-sm shadow-sm hover:bg-white/90 transition-colors"
-                >
-                  <Menu className="h-5 w-5" />
-                </button>
-
                 <div className="flex items-center gap-2 bg-white/90 backdrop-blur-sm rounded-lg p-1 border border-gray-200">
                   <button
                     onClick={() => setUseChatInterface(true)}
@@ -1059,10 +963,6 @@ export default function Home() {
                   </button>
                 </div>
               </div>
-
-              {/* <div className="flex-1 p-4 pt-20">
-                <Timetable />
-              </div> */}
             </div>
           </div>
         </div>

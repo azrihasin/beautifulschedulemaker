@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { Folder, MoreHorizontal, Plus, Edit2, Trash2 } from "lucide-react";
 import { useTimetableStore } from "@/stores/timetableStore";
+import { useChatStore } from "@/stores/chatStore";
 import { useSidebarStore } from "@/stores/sidebarStore";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { SidebarGroupLabel } from "@/components/ui/sidebar";
 import { ChatItem } from "./chat-item";
@@ -22,23 +34,22 @@ interface TimetableItemProps {
   timetable: Timetable;
 }
 
-export function TimetableItem({ timetable }: TimetableItemProps) {
-  const { 
-    chats, 
-    activeTimetableId, 
-    setActiveTimetable, 
-    renameTimetable, 
-    deleteTimetable, 
-    createChat,
-    setActiveChat,
-    clearActiveChat,
-  } = useTimetableStore();
-  const { 
-    isCollapsed, 
-    expandedTimetables, 
-    toggleTimetable,
-    expandTimetable 
-  } = useSidebarStore();
+export const TimetableItem = React.memo(function TimetableItem({ timetable }: TimetableItemProps) {
+  // Use selective subscriptions to prevent unnecessary rerenders
+  const activeTimetableId = useTimetableStore((state) => state.activeTimetableId);
+  const setActiveTimetable = useTimetableStore((state) => state.setActiveTimetable);
+  const updateTimetable = useTimetableStore((state) => state.updateTimetable);
+  const deleteTimetable = useTimetableStore((state) => state.deleteTimetable);
+  
+  const chats = useChatStore((state) => state.chats);
+  const createChat = useChatStore((state) => state.createChat);
+  const setActiveChat = useChatStore((state) => state.setActiveChat);
+  const clearActiveChat = useChatStore((state) => state.clearActiveChat);
+  
+  const isCollapsed = useSidebarStore((state) => state.isCollapsed);
+  const expandedTimetables = useSidebarStore((state) => state.expandedTimetables);
+  const toggleTimetable = useSidebarStore((state) => state.toggleTimetable);
+  const expandTimetable = useSidebarStore((state) => state.expandTimetable);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(timetable.name);
@@ -64,7 +75,7 @@ export function TimetableItem({ timetable }: TimetableItemProps) {
   const handleRename = async () => {
     if (editName.trim() && editName !== timetable.name) {
       try {
-        await renameTimetable(timetable.id, editName.trim());
+        updateTimetable({ ...timetable, name: editName.trim(), updatedAt: new Date() });
       } catch (error) {
         console.error('Failed to rename timetable:', error);
         setEditName(timetable.name); // Reset on error
@@ -214,13 +225,34 @@ export function TimetableItem({ timetable }: TimetableItemProps) {
                 <Edit2 className="h-4 w-4" />
                 Rename
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={handleDelete}
-                className="flex items-center gap-2 text-red-600 focus:text-red-600"
-              >
-                <Trash2 className="h-4 w-4" />
-                Delete
-              </DropdownMenuItem>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <DropdownMenuItem
+                    onSelect={(e) => e.preventDefault()}
+                    className="flex items-center gap-2 text-red-600 focus:text-red-600"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete
+                  </DropdownMenuItem>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete Timetable</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Are you sure you want to delete "{timetable.name}"? This will also delete all associated chats and cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleDelete}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      Delete
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -236,4 +268,4 @@ export function TimetableItem({ timetable }: TimetableItemProps) {
       )}
     </div>
   );
-}
+});

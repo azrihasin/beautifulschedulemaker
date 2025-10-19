@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useCourseStore } from '@/stores/courseStore';
+import { useTimetableStore } from '@/stores/timetableStore';
 import { createCourseForCurrentTimetable } from '@/lib/course-timetable-helpers';
 import type { CourseWithSessions } from '@/lib/supabase/database.types';
 
@@ -91,7 +92,9 @@ const COLOR_PALETTE = [
 ];
 
 export const useCourseActions = () => {
-  const { updateCourse, deleteCourse, resetCourses, courses } = useCourseStore();
+  const { updateCourse, deleteCourse, resetCourses, getCourses } = useCourseStore();
+  const { activeTimetableId } = useTimetableStore();
+  const courses = getCourses(activeTimetableId || '');
   const [isExecuting, setIsExecuting] = useState(false);
 
   // Store snapshot for rollback functionality
@@ -473,7 +476,7 @@ export const useCourseActions = () => {
             };
           }
           
-          updateCourse(updatedCourse);
+          updateCourse(activeTimetableId || '', courseToUpdate.id, updatedCourse);
           return { 
             success: true, 
             action,
@@ -521,7 +524,7 @@ export const useCourseActions = () => {
           }
           
           const courseInfo = `${courseToDelete.code} - ${courseToDelete.name}`;
-          deleteCourse(courseToDelete.id);
+          deleteCourse(activeTimetableId || '', courseToDelete.id);
           return { 
             success: true, 
             action,

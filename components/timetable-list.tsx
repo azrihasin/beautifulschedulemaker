@@ -7,15 +7,18 @@ import { cn } from "@/lib/utils";
 import { TimetableItem } from "./timetable-item";
 
 export function TimetableList() {
-  const { timetables, isLoading, loadTimetables } = useTimetableStore();
-  const { isCollapsed } = useSidebarStore();
+  // Use selective subscriptions to prevent unnecessary rerenders
+  const timetables = useTimetableStore((state) => state.timetables);
+  const isLoading = useTimetableStore((state) => state.isLoading);
+  const loadTimetables = useTimetableStore((state) => state.loadTimetables);
+  const isCollapsed = useSidebarStore((state) => state.isCollapsed);
 
   // Load timetables when component mounts if not already loaded
   useEffect(() => {
     if (timetables.length === 0 && !isLoading && loadTimetables) {
       loadTimetables().catch(console.error);
     }
-  }, [timetables.length, isLoading, loadTimetables]);
+  }, [timetables.length, isLoading]); // Remove loadTimetables from dependencies
 
   if (isLoading) {
     return (

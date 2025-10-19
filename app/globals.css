@@ -99,10 +99,7 @@
   --color-sidebar-ring: hsl(var(--sidebar-ring));
   --color-sidebar-muted-foreground: hsl(var(--sidebar-muted-foreground));
 
-  --color-shiki-light: var(--shiki-light);
-  --color-shiki-light-bg: var(--shiki-light-bg);
-  --color-shiki-dark: var(--shiki-dark);
-  --color-shiki-dark-bg: var(--shiki-dark-bg);
+
 
   --radius-xl: calc(var(--radius) + 4px);
   --radius-lg: var(--radius);

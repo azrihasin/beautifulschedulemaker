@@ -1,6 +1,36 @@
 // TypeScript interfaces for sidebar and timetable stores
 
+import { v4 as uuidv4 } from "uuid";
 import { UIMessage } from "ai";
+
+// Course-related interfaces
+export interface CourseSession {
+  session_id: string;
+  days: string[];
+  startTime: string;
+  endTime: string;
+  location: string;
+}
+
+export interface CourseWithSessions {
+  id: string;
+  name: string;
+  code?: string;
+  color?: string;
+  timetable_id: string;
+  sessions: CourseSession[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface Chat {
+  id: string;
+  name: string;
+  timetableId: string;
+  messages: UIMessage[];
+  createdAt: Date;
+  updatedAt: Date;
+}
 
 export interface Timetable {
   id: string;
@@ -9,15 +39,6 @@ export interface Timetable {
   createdAt: Date;
   updatedAt: Date;
   isActive: boolean;
-}
-
-export interface Chat {
-  id: string;
-  timetableId: string;
-  name: string;
-  messages: UIMessage[];
-  createdAt: Date;
-  updatedAt: Date;
 }
 
 export interface ChatMessage {
@@ -41,43 +62,38 @@ export interface SidebarStore {
 // Timetable Store Interface
 export interface TimetableStore {
   timetables: Timetable[];
-  chats: Chat[];
   activeTimetableId: string | null;
-  activeChatId: string | null;
   isLoading: boolean;
   error: string | null;
-  renamingChats: Set<string>; // Track chats currently being renamed with animation
   
-  // Timetable actions
-  createTimetable: () => Promise<Timetable>;
-  renameTimetable: (id: string, name: string) => Promise<void>;
-  deleteTimetable: (id: string) => Promise<void>;
+  addTimetable: () => Timetable;
   setActiveTimetable: (id: string) => void;
+  updateTimetable: (updatedTimetable: Timetable) => void;
+  deleteTimetable: (id: string) => void;
+  getTimetables: () => Timetable[];
+  getTimetable: (id: string) => Timetable | undefined;
+  updateMany: (updates: Array<{ id: string; updates: Partial<Omit<Timetable, 'id' | 'createdAt' | 'courses'>> }>) => void;
+  getActiveTimetableId: () => string | null;
+}
+
+// Chat Store Interface (simplified CRUD operations)
+export interface ChatStore {
+  chats: Chat[];
+  activeChatId: string | null;
+  // Track ongoing rename operations for UX
+  renamingChats: Set<string>;
   
-  // Chat actions
-  createTemporaryChat: (timetableId: string) => Chat;
-  persistTemporaryChat: (tempChatId: string, firstMessageText: string) => Promise<Chat>;
-  createChat: (timetableId: string, name?: string) => Promise<Chat>;
-  renameChat: (id: string, name: string) => Promise<void>;
+  // Basic CRUD operations
+  addChat: (chat: Chat) => void;
   deleteChat: (id: string) => Promise<void>;
+  updateChat: (updatedChat: Chat) => void;
+  createChat: (timetableId: string) => Promise<Chat>;
+  // Rename operation
+  renameChat: (id: string, newName: string) => Promise<void>;
+  
+  // Navigation methods
   setActiveChat: (id: string) => void;
   clearActiveChat: () => void;
-  addMessage: (chatId: string, message: UIMessage) => Promise<void>;
-  updateChatMessages: (chatId: string, messages: UIMessage[]) => Promise<void>;
-  
-  // Data sync
-  loadTimetables: (forceRefresh?: boolean) => Promise<void>;
-  syncFromSupabase: (userId: string) => Promise<void>;
-  syncToSupabase: () => Promise<void>;
-  refreshFromDatabase: () => Promise<void>;
-  
-  // Error handling
-  setError: (error: string | null) => void;
-  clearError: () => void;
-  
-  // Renaming animation helpers
-  startRenamingAnimation: (chatId: string) => void;
-  stopRenamingAnimation: (chatId: string) => void;
 }
 
 // Note-related types

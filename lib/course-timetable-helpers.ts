@@ -1,6 +1,6 @@
 import { useCourseStore } from '../stores/courseStore';
 import { useTimetableStore } from '../stores/timetableStore';
-import type { CourseWithSessions } from './supabase/database.types';
+import type { CourseWithSessions, CourseWithSessionsInput } from './supabase/database.types';
 import { createClient } from './supabase/client';
 
 const supabase = createClient();
@@ -9,14 +9,7 @@ const supabase = createClient();
  * Helper functions to manage the relationship between courses and timetables
  */
 
-/**
- * Load courses for a specific timetable
- * @param timetableId - The ID of the timetable to load courses for
- */
-export const loadCoursesForTimetable = async (timetableId: string): Promise<void> => {
-  const { loadCourses } = useCourseStore.getState();
-  await loadCourses(timetableId);
-};
+
 
 /**
  * Create a new course tied to the current active timetable
@@ -24,7 +17,7 @@ export const loadCoursesForTimetable = async (timetableId: string): Promise<void
  * @returns Promise<CourseWithSessions> - The created course
  */
 export const createCourseForCurrentTimetable = async (
-  courseData: Omit<CourseWithSessions, 'id' | 'created_at' | 'updated_at' | 'user_id' | 'timetable_id'>
+  courseData: CourseWithSessionsInput
 ): Promise<CourseWithSessions> => {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
@@ -38,28 +31,23 @@ export const createCourseForCurrentTimetable = async (
 
   const { addCourse } = useCourseStore.getState();
   
-  const courseWithRelations = {
+  const courseWithoutTimetableId = {
     ...courseData,
-    user_id: user.id,
-    timetable_id: activeTimetableId
+    user_id: user.id
   };
 
-  return await addCourse(courseWithRelations);
+  return addCourse(activeTimetableId, courseWithoutTimetableId);
 };
 
 /**
- * Switch to a different timetable and load its courses
+ * Switch to a different timetable
  * @param timetableId - The ID of the timetable to switch to
  */
 export const switchToTimetable = async (timetableId: string): Promise<void> => {
   const { setActiveTimetable } = useTimetableStore.getState();
-  const { loadCourses } = useCourseStore.getState();
   
   // Switch timetable
   setActiveTimetable(timetableId);
-  
-  // Load courses for the new timetable
-  await loadCourses(timetableId);
 };
 
 /**
@@ -68,11 +56,11 @@ export const switchToTimetable = async (timetableId: string): Promise<void> => {
  * @returns Promise<string> - The ID of the created timetable
  */
 export const createNewTimetableWithCourses = async (timetableName: string): Promise<string> => {
-  const { createTimetable, setActiveTimetable } = useTimetableStore.getState();
+  const { addTimetable, setActiveTimetable } = useTimetableStore.getState();
   const { resetCourses } = useCourseStore.getState();
   
   // Create new timetable
-  const newTimetableId = await createTimetable(timetableName);
+  const newTimetableId = await addTimetable(timetableName);
   
   // Switch to the new timetable
   setActiveTimetable(newTimetableId);
@@ -139,9 +127,6 @@ export const initializeCoursesForTimetable = async (timetableId: string | null):
     await resetCourses();
     return;
   }
-
-  // Load courses for the selected timetable
-  await loadCoursesForTimetable(timetableId);
 };
 
 /**

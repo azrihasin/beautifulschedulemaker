@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { PlusIcon } from "lucide-react";
 import { useCourseStore } from "@/stores/courseStore";
+import { useTimetableStore } from "@/stores/timetableStore";
 import { createCourseForCurrentTimetable } from "@/lib/course-timetable-helpers";
 import { toast } from "sonner";
 import moment from "moment";
@@ -18,6 +19,7 @@ const DAYS_OF_WEEK = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 
 export default function CourseDialog({ isOpen, onClose, courseId }: any) {
   const { courses, updateCourse } = useCourseStore();
+  const { activeTimetableId } = useTimetableStore();
   const [formData, setFormData] = useState({
     code: "",
     name: "",
@@ -88,7 +90,19 @@ export default function CourseDialog({ isOpen, onClose, courseId }: any) {
     if (hasError) return;
 
     if (courseId) {
-      updateCourse({ ...formData, id: courseId });
+      if (!activeTimetableId) {
+        toast.error('No active timetable found');
+        return;
+      }
+      // Add session_id to sessions for updateCourse
+      const formDataWithSessionIds = {
+        ...formData,
+        sessions: formData.sessions.map((session: any) => ({
+          ...session,
+          session_id: session.session_id || crypto.randomUUID()
+        }))
+      };
+      updateCourse(activeTimetableId, formData.code, formDataWithSessionIds);
       toast.success(`Successfully updated ${formData.code} - ${formData.name}!`);
     } else {
       try {

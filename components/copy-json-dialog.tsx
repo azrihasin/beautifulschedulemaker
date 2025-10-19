@@ -10,13 +10,16 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { PlusIcon } from "lucide-react";
 import { useCourseStore } from "@/stores/courseStore";
+import { useTimetableStore } from "@/stores/timetableStore";
 import moment from "moment";
 import { Textarea } from "./ui/textarea";
 
 const DAYS_OF_WEEK = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 
 export default function CopyJsonDialog({ isOpen, onClose, courseId }: any) {
-  const { courses, addCourse, updateCourse } = useCourseStore();
+  const { getCourses, addCourse, updateCourse } = useCourseStore();
+  const { activeTimetableId } = useTimetableStore();
+  const courses = getCourses(activeTimetableId || '');
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>

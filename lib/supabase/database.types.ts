@@ -292,9 +292,23 @@ export interface CourseSession {
   location: string
 }
 
+// Course session input interface for creating courses (session_id is optional)
+export interface CourseSessionInput {
+  session_id?: string
+  days: string[]
+  startTime: string
+  endTime: string
+  location: string
+}
+
 // Extended course interface with parsed sessions
 export interface CourseWithSessions extends Omit<Course, 'sessions'> {
   sessions: CourseSession[]
+}
+
+// Extended course input interface for creating courses
+export interface CourseWithSessionsInput extends Omit<Course, 'sessions' | 'id' | 'created_at' | 'updated_at' | 'user_id' | 'timetable_id'> {
+  sessions: CourseSessionInput[]
 }
 
 // Excalidraw scene data interface for type safety

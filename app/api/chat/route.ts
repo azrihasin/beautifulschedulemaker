@@ -1,8 +1,7 @@
-import { streamText, UIMessage, convertToModelMessages } from "ai";
-import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 import { withTokenLimit } from "@/lib/token-middleware";
 import { randomUUID } from "crypto";
+import { streamText, UIMessage } from "@/lib/chrome-ai";
 
 export const maxDuration = 30;
 
@@ -99,492 +98,527 @@ ${coursesContext}
 
 Remember: You have access to tools for adding, updating, and deleting courses. Always use the most current timetable state shown above when making decisions or recommendations.`;
 
-  const result = streamText({
-    model: openai("gpt-4.1"),
-    system: systemPrompt,
-    messages: convertToModelMessages(messages),
-    tools: {
-      getWeatherInformation: {
-        description: "show the weather in a given city to the user",
-        inputSchema: z.object({ city: z.string() }),
-        execute: async ({}: { city: string }) => {
-          const weatherOptions = ["sunny", "cloudy", "rainy", "snowy", "windy"];
-          return weatherOptions[
-            Math.floor(Math.random() * weatherOptions.length)
-          ];
-        },
-      },
-      getLocation: {
-        description: "Get the user location.",
-        inputSchema: z.object({}),
-      },
-      addCourse: {
-        description: "Add a new course to the course store.",
-        inputSchema: z.object({
-          code: z.string().describe("Course code (e.g., 'INFO 3205')"),
-          name: z
-            .string()
-            .describe("Course name (e.g., 'INFORMATION VISUALIZATION')"),
-          sessions: z
-            .array(
-              z.object({
-                days: z
-                  .array(z.string())
-                  .describe(
-                    "Days of the week the course meets (e.g., ['MON', 'WED'])"
-                  ),
-                startTime: z
-                  .string()
-                  .describe("Start time in 24-hour format (e.g., '10:00')"),
-                endTime: z
-                  .string()
-                  .describe("End time in 24-hour format (e.g., '11:20')"),
-                location: z.string().describe("Physical location of the class"),
-              })
-            )
-            .describe("Array of session objects"),
-          color: z
-            .string()
-            .describe("Hex color code for the course (e.g., '#FFB3BA')"),
-        }),
-        execute: async ({
-          code,
-          name,
-          sessions,
-          color,
-        }: {
-          code: string;
-          name: string;
-          sessions: Array<{
-            days: string[];
-            startTime: string;
-            endTime: string;
-            location: string;
-          }>;
-          color: string;
-        }) => {
-          const courseData = {
-            id: randomUUID(),
-            code,
-            name,
-            color: color || "#FFB3BA",
-            sessions: sessions.map((session) => ({
-              ...session,
-              session_id: randomUUID(),
-            })),
-          };
-
-          return {
-            success: true,
-            course: courseData,
-            message: `Successfully added ${code} - ${name} to your timetable!`,
-            refreshCourses: true,
-          };
-        },
-      },
-      deleteCourse: {
-        description: "Delete a course from the course store.",
-        inputSchema: z.object({
-          courseId: z.string().describe("The ID of the course to delete"),
-        }),
-        execute: async ({ courseId }: { courseId: string }) => {
-          return {
-            success: true,
-            message: `Successfully deleted course ${courseId} from your timetable!`,
-            refreshCourses: true,
-          };
-        },
-      },
-      updateCourse: {
-        description: "Update an existing course in the course store.",
-        inputSchema: z.object({
-          courseId: z.string().describe("The ID of the course to update"),
-          code: z
-            .string()
-            .optional()
-            .describe("Course code (e.g., 'INFO 3205')"),
-          name: z
-            .string()
-            .optional()
-            .describe("Course name (e.g., 'INFORMATION VISUALIZATION')"),
-          sessions: z
-            .array(
-              z.object({
-                session_id: z.string().optional().describe("Session ID"),
-                days: z
-                  .array(z.string())
-                  .describe(
-                    "Days of the week the course meets (e.g., ['MON', 'WED'])"
-                  ),
-                startTime: z
-                  .string()
-                  .describe("Start time in 24-hour format (e.g., '10:00')"),
-                endTime: z
-                  .string()
-                  .describe("End time in 24-hour format (e.g., '11:20')"),
-                location: z.string().describe("Physical location of the class"),
-              })
-            )
-            .optional()
-            .describe("Array of session objects"),
-          color: z
-            .string()
-            .optional()
-            .describe("Hex color code for the course (e.g., '#FFB3BA')"),
-        }),
-        execute: async ({
-          courseId,
-          code,
-          name,
-          sessions,
-          color,
-        }: {
-          courseId: string;
-          code?: string;
-          name?: string;
-          sessions?: Array<{
-            session_id?: string;
-            days: string[];
-            startTime: string;
-            endTime: string;
-            location: string;
-          }>;
-          color?: string;
-        }) => {
-          const updateData: any = { id: courseId };
-          if (code !== undefined) updateData.code = code;
-          if (name !== undefined) updateData.name = name;
-          if (color !== undefined) updateData.color = color;
-          if (sessions !== undefined) {
-            updateData.sessions = sessions.map((session) => ({
-              ...session,
-              session_id:
-                session.session_id ||
-                `session-${Date.now()}-${Math.random()
-                  .toString(36)
-                  .substr(2, 9)}`,
-            }));
-          }
-
-          return {
-            success: true,
-            course: updateData,
-            message: `Successfully updated course ${courseId}!`,
-            refreshCourses: true,
-          };
-        },
-      },
-      resetCourses: {
-        description: "Delete all courses from the current timetable.",
-        inputSchema: z.object({}),
-        execute: async () => {
-          return {
-            success: true,
-            message: "Successfully deleted all courses from your timetable!",
-            refreshCourses: true,
-          };
-        },
-      },
-      loadCourses: {
-        description: "Load all courses for the current timetable.",
-        inputSchema: z.object({}),
-        execute: async () => {
-          return {
-            success: true,
-            courses: [],
-            message: "Successfully loaded 0 courses from your timetable!",
-          };
-        },
-      },
-      searchNotes: {
-        description:
-          "Search and summarize user notes based on a query. Use this when users ask about their notes, want summaries, or need information from their saved notes.",
-        inputSchema: z.object({
-          query: z
-            .string()
-            .describe(
-              "Search query or topic to find relevant notes (e.g., 'Physics', 'midterm', 'this week')"
-            ),
-        }),
-        execute: async ({ query }) => {
-          return {
-            query,
-            totalNotes: 0,
-            notes: [],
-          };
-        },
-      },
-      updateTimetableSettings: {
-        description:
-          "Update timetable display settings such as text size, colors, opacity, and visibility options.",
-        inputSchema: z.object({
-          textSize: z
-            .number()
-            .min(6)
-            .max(24)
-            .optional()
-            .describe("Text size in pixels (6-24)"),
-          textColor: z
-            .string()
-            .optional()
-            .describe("Text color (hex, rgb, or named color)"),
-          opacity: z
-            .number()
-            .min(0)
-            .max(100)
-            .optional()
-            .describe("Opacity percentage (0-100)"),
-          abbreviationFormat: z
-            .enum(["one", "two", "three", "full"])
-            .optional()
-            .describe("Course name abbreviation format"),
-          hideCourseCode: z
-            .boolean()
-            .optional()
-            .describe("Hide course codes from display"),
-          hideCourseName: z
-            .boolean()
-            .optional()
-            .describe("Hide course names from display"),
-          hideTime: z
-            .boolean()
-            .optional()
-            .describe("Hide time information from display"),
-          hideDays: z
-            .boolean()
-            .optional()
-            .describe("Hide days information from display"),
-        }),
-        execute: async ({
-          textSize,
-          textColor,
-          opacity,
-          abbreviationFormat,
-          hideCourseCode,
-          hideCourseName,
-          hideTime,
-          hideDays,
-        }) => {
-          try {
-            const updates = [];
-
-            if (textSize !== undefined) {
-              updates.push(`text size to ${textSize}px`);
-            }
-            if (textColor !== undefined) {
-              updates.push(`text color to ${textColor}`);
-            }
-            if (opacity !== undefined) {
-              updates.push(`opacity to ${opacity}%`);
-            }
-            if (abbreviationFormat !== undefined) {
-              updates.push(`abbreviation format to ${abbreviationFormat}`);
-            }
-            if (hideCourseCode !== undefined) {
-              updates.push(
-                `course code visibility to ${
-                  hideCourseCode ? "hidden" : "visible"
-                }`
-              );
-            }
-            if (hideCourseName !== undefined) {
-              updates.push(
-                `course name visibility to ${
-                  hideCourseName ? "hidden" : "visible"
-                }`
-              );
-            }
-            if (hideTime !== undefined) {
-              updates.push(
-                `time visibility to ${hideTime ? "hidden" : "visible"}`
-              );
-            }
-            if (hideDays !== undefined) {
-              updates.push(
-                `days visibility to ${hideDays ? "hidden" : "visible"}`
-              );
-            }
-
-            return {
-              success: true,
-              message: `Successfully updated timetable settings: ${updates.join(
-                ", "
-              )}`,
-              settings: {
-                textSize,
-                textColor,
-                opacity,
-                abbreviationFormat,
-                hideCourseCode,
-                hideCourseName,
-                hideTime,
-                hideDays,
-              },
-              refreshSettings: true,
-            };
-          } catch (error) {
-            console.error("Failed to update timetable settings:", error);
-            return {
-              error:
-                error instanceof Error
-                  ? error.message
-                  : "Failed to update timetable settings",
-            };
-          }
-        },
-      },
-      updateFontSettings: {
-        description:
-          "Update font settings for specific timetable elements (course code, course name, time, or days).",
-        inputSchema: z.object({
-          element: z
-            .enum(["courseCode", "courseName", "time", "days"])
-            .describe("Which element to update font settings for"),
-          fontFamily: z.string().optional().describe("Font family name"),
-          fontSize: z
-            .number()
-            .min(6)
-            .max(48)
-            .optional()
-            .describe("Font size in pixels"),
-          fontWeight: z
-            .union([z.string(), z.number()])
-            .optional()
-            .describe("Font weight (normal, bold, 100-900)"),
-          fontStyle: z
-            .enum(["normal", "italic", "oblique"])
-            .optional()
-            .describe("Font style"),
-          lineHeight: z
-            .number()
-            .min(0.5)
-            .max(3)
-            .optional()
-            .describe("Line height multiplier"),
-          letterSpacing: z
-            .number()
-            .min(-5)
-            .max(10)
-            .optional()
-            .describe("Letter spacing in pixels"),
-          textTransform: z
-            .enum(["none", "uppercase", "lowercase", "capitalize"])
-            .optional()
-            .describe("Text transformation"),
-        }),
-        execute: async ({
-          element,
-          fontFamily,
-          fontSize,
-          fontWeight,
-          fontStyle,
-          lineHeight,
-          letterSpacing,
-          textTransform,
-        }) => {
-          try {
-            const updates = [];
-
-            if (fontFamily !== undefined) {
-              updates.push(`font family to ${fontFamily}`);
-            }
-            if (fontSize !== undefined) {
-              updates.push(`font size to ${fontSize}px`);
-            }
-            if (fontWeight !== undefined) {
-              updates.push(`font weight to ${fontWeight}`);
-            }
-            if (fontStyle !== undefined) {
-              updates.push(`font style to ${fontStyle}`);
-            }
-            if (lineHeight !== undefined) {
-              updates.push(`line height to ${lineHeight}`);
-            }
-            if (letterSpacing !== undefined) {
-              updates.push(`letter spacing to ${letterSpacing}px`);
-            }
-            if (textTransform !== undefined) {
-              updates.push(`text transform to ${textTransform}`);
-            }
-
-            return {
-              success: true,
-              message: `Successfully updated ${element} font settings: ${updates.join(
-                ", "
-              )}`,
-              element,
-              fontSettings: {
-                fontFamily,
-                fontSize,
-                fontWeight,
-                fontStyle,
-                lineHeight,
-                letterSpacing,
-                textTransform,
-              },
-              refreshSettings: true,
-            };
-          } catch (error) {
-            console.error("Failed to update font settings:", error);
-            return {
-              error:
-                error instanceof Error
-                  ? error.message
-                  : "Failed to update font settings",
-            };
-          }
-        },
-      },
-    },
-  });
-
-  console.log(result);
-
-  const response = result.toUIMessageStreamResponse();
-
-  result.usage
-    .then(async (usage) => {
-      if (usage && usage.totalTokens) {
-        await tokenCheck.recordUsage(usage.totalTokens);
-      }
-    })
-    .catch((error) => {
-      console.error("Failed to record token usage:", error);
+  try {
+    const result = await streamText({
+      messages: messages,
+      system: systemPrompt
     });
 
-  const headers = new Headers(response.headers);
-  headers.set(
-    "X-RateLimit-Tokens-Used",
-    tokenCheck.usage.tokensUsed.toString()
-  );
-  headers.set(
-    "X-RateLimit-Tokens-Remaining",
-    tokenCheck.usage.tokensRemaining.toString()
-  );
-  headers.set(
-    "X-RateLimit-Requests-Used",
-    tokenCheck.usage.requestsUsed.toString()
-  );
-  headers.set(
-    "X-RateLimit-Requests-Remaining",
-    tokenCheck.usage.requestsRemaining.toString()
-  );
-  headers.set(
-    "X-RateLimit-Reset",
-    new Date(tokenCheck.usage.resetTime).toISOString()
-  );
+    // Create a readable stream for the response
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          for await (const chunk of result.textStream) {
+            const data = `data: ${JSON.stringify({ content: chunk })}\n\n`;
+            controller.enqueue(encoder.encode(data));
+          }
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+          controller.close();
+        } catch (error) {
+          console.error('Chrome AI streaming error:', error);
+          controller.error(error);
+        }
+      }
+    });
 
-  if (tokenCheck.usage.warningTriggered) {
-    headers.set("X-RateLimit-Warning", "true");
-    headers.set(
-      "X-RateLimit-Warning-Message",
-      tokenCheck.usage.message || "Approaching daily limit"
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+    });
+
+  } catch (error) {
+    console.error('Chrome AI error:', error);
+    return new Response(
+      JSON.stringify({ 
+        error: 'Chrome AI is not available. Please use Chrome Canary with AI features enabled.',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      }), 
+      { 
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      }
     );
   }
 
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers,
-  });
+  // const result = streamText({
+  //   model: openai("gpt-4.1"),
+  //   system: systemPrompt,
+  //   messages: convertToModelMessages(messages),
+  //   tools: {
+  //     getWeatherInformation: {
+  //       description: "show the weather in a given city to the user",
+  //       inputSchema: z.object({ city: z.string() }),
+  //       execute: async ({}: { city: string }) => {
+  //         const weatherOptions = ["sunny", "cloudy", "rainy", "snowy", "windy"];
+  //         return weatherOptions[
+  //           Math.floor(Math.random() * weatherOptions.length)
+  //         ];
+  //       },
+  //     },
+  //     getLocation: {
+  //       description: "Get the user location.",
+  //       inputSchema: z.object({}),
+  //     },
+  //     addCourse: {
+  //       description: "Add a new course to the course store.",
+  //       inputSchema: z.object({
+  //         code: z.string().describe("Course code (e.g., 'INFO 3205')"),
+  //         name: z
+  //           .string()
+  //           .describe("Course name (e.g., 'INFORMATION VISUALIZATION')"),
+  //         sessions: z
+  //           .array(
+  //             z.object({
+  //               days: z
+  //                 .array(z.string())
+  //                 .describe(
+  //                   "Days of the week the course meets (e.g., ['MON', 'WED'])"
+  //                 ),
+  //               startTime: z
+  //                 .string()
+  //                 .describe("Start time in 24-hour format (e.g., '10:00')"),
+  //               endTime: z
+  //                 .string()
+  //                 .describe("End time in 24-hour format (e.g., '11:20')"),
+  //               location: z.string().describe("Physical location of the class"),
+  //             })
+  //           )
+  //           .describe("Array of session objects"),
+  //         color: z
+  //           .string()
+  //           .describe("Hex color code for the course (e.g., '#FFB3BA')"),
+  //       }),
+  //       execute: async ({
+  //         code,
+  //         name,
+  //         sessions,
+  //         color,
+  //       }: {
+  //         code: string;
+  //         name: string;
+  //         sessions: Array<{
+  //           days: string[];
+  //           startTime: string;
+  //           endTime: string;
+  //           location: string;
+  //         }>;
+  //         color: string;
+  //       }) => {
+  //         const courseData = {
+  //           id: randomUUID(),
+  //           code,
+  //           name,
+  //           color: color || "#FFB3BA",
+  //           sessions: sessions.map((session) => ({
+  //             ...session,
+  //             session_id: randomUUID(),
+  //           })),
+  //         };
+
+  //         return {
+  //           success: true,
+  //           course: courseData,
+  //           message: `Successfully added ${code} - ${name} to your timetable!`,
+  //           refreshCourses: true,
+  //         };
+  //       },
+  //     },
+  //     deleteCourse: {
+  //       description: "Delete a course from the course store.",
+  //       inputSchema: z.object({
+  //         courseId: z.string().describe("The ID of the course to delete"),
+  //       }),
+  //       execute: async ({ courseId }: { courseId: string }) => {
+  //         return {
+  //           success: true,
+  //           message: `Successfully deleted course ${courseId} from your timetable!`,
+  //           refreshCourses: true,
+  //         };
+  //       },
+  //     },
+  //     updateCourse: {
+  //       description: "Update an existing course in the course store.",
+  //       inputSchema: z.object({
+  //         courseId: z.string().describe("The ID of the course to update"),
+  //         code: z
+  //           .string()
+  //           .optional()
+  //           .describe("Course code (e.g., 'INFO 3205')"),
+  //         name: z
+  //           .string()
+  //           .optional()
+  //           .describe("Course name (e.g., 'INFORMATION VISUALIZATION')"),
+  //         sessions: z
+  //           .array(
+  //             z.object({
+  //               session_id: z.string().optional().describe("Session ID"),
+  //               days: z
+  //                 .array(z.string())
+  //                 .describe(
+  //                   "Days of the week the course meets (e.g., ['MON', 'WED'])"
+  //                 ),
+  //               startTime: z
+  //                 .string()
+  //                 .describe("Start time in 24-hour format (e.g., '10:00')"),
+  //               endTime: z
+  //                 .string()
+  //                 .describe("End time in 24-hour format (e.g., '11:20')"),
+  //               location: z.string().describe("Physical location of the class"),
+  //             })
+  //           )
+  //           .optional()
+  //           .describe("Array of session objects"),
+  //         color: z
+  //           .string()
+  //           .optional()
+  //           .describe("Hex color code for the course (e.g., '#FFB3BA')"),
+  //       }),
+  //       execute: async ({
+  //         courseId,
+  //         code,
+  //         name,
+  //         sessions,
+  //         color,
+  //       }: {
+  //         courseId: string;
+  //         code?: string;
+  //         name?: string;
+  //         sessions?: Array<{
+  //           session_id?: string;
+  //           days: string[];
+  //           startTime: string;
+  //           endTime: string;
+  //           location: string;
+  //         }>;
+  //         color?: string;
+  //       }) => {
+  //         const updateData: any = { id: courseId };
+  //         if (code !== undefined) updateData.code = code;
+  //         if (name !== undefined) updateData.name = name;
+  //         if (color !== undefined) updateData.color = color;
+  //         if (sessions !== undefined) {
+  //           updateData.sessions = sessions.map((session) => ({
+  //             ...session,
+  //             session_id:
+  //               session.session_id ||
+  //               `session-${Date.now()}-${Math.random()
+  //                 .toString(36)
+  //                 .substr(2, 9)}`,
+  //           }));
+  //         }
+
+  //         return {
+  //           success: true,
+  //           course: updateData,
+  //           message: `Successfully updated course ${courseId}!`,
+  //           refreshCourses: true,
+  //         };
+  //       },
+  //     },
+  //     resetCourses: {
+  //       description: "Delete all courses from the current timetable.",
+  //       inputSchema: z.object({}),
+  //       execute: async () => {
+  //         return {
+  //           success: true,
+  //           message: "Successfully deleted all courses from your timetable!",
+  //           refreshCourses: true,
+  //         };
+  //       },
+  //     },
+  //     searchNotes: {
+  //       description:
+  //         "Search and summarize user notes based on a query. Use this when users ask about their notes, want summaries, or need information from their saved notes.",
+  //       inputSchema: z.object({
+  //         query: z
+  //           .string()
+  //           .describe(
+  //             "Search query or topic to find relevant notes (e.g., 'Physics', 'midterm', 'this week')"
+  //           ),
+  //       }),
+  //       execute: async ({ query }) => {
+  //         return {
+  //           query,
+  //           totalNotes: 0,
+  //           notes: [],
+  //         };
+  //       },
+  //     },
+  //     updateTimetableSettings: {
+  //       description:
+  //         "Update timetable display settings such as text size, colors, opacity, and visibility options.",
+  //       inputSchema: z.object({
+  //         textSize: z
+  //           .number()
+  //           .min(6)
+  //           .max(24)
+  //           .optional()
+  //           .describe("Text size in pixels (6-24)"),
+  //         textColor: z
+  //           .string()
+  //           .optional()
+  //           .describe("Text color (hex, rgb, or named color)"),
+  //         opacity: z
+  //           .number()
+  //           .min(0)
+  //           .max(100)
+  //           .optional()
+  //           .describe("Opacity percentage (0-100)"),
+  //         abbreviationFormat: z
+  //           .enum(["one", "two", "three", "full"])
+  //           .optional()
+  //           .describe("Course name abbreviation format"),
+  //         hideCourseCode: z
+  //           .boolean()
+  //           .optional()
+  //           .describe("Hide course codes from display"),
+  //         hideCourseName: z
+  //           .boolean()
+  //           .optional()
+  //           .describe("Hide course names from display"),
+  //         hideTime: z
+  //           .boolean()
+  //           .optional()
+  //           .describe("Hide time information from display"),
+  //         hideDays: z
+  //           .boolean()
+  //           .optional()
+  //           .describe("Hide days information from display"),
+  //       }),
+  //       execute: async ({
+  //         textSize,
+  //         textColor,
+  //         opacity,
+  //         abbreviationFormat,
+  //         hideCourseCode,
+  //         hideCourseName,
+  //         hideTime,
+  //         hideDays,
+  //       }) => {
+  //         try {
+  //           const updates = [];
+
+  //           if (textSize !== undefined) {
+  //             updates.push(`text size to ${textSize}px`);
+  //           }
+  //           if (textColor !== undefined) {
+  //             updates.push(`text color to ${textColor}`);
+  //           }
+  //           if (opacity !== undefined) {
+  //             updates.push(`opacity to ${opacity}%`);
+  //           }
+  //           if (abbreviationFormat !== undefined) {
+  //             updates.push(`abbreviation format to ${abbreviationFormat}`);
+  //           }
+  //           if (hideCourseCode !== undefined) {
+  //             updates.push(
+  //               `course code visibility to ${
+  //                 hideCourseCode ? "hidden" : "visible"
+  //               }`
+  //             );
+  //           }
+  //           if (hideCourseName !== undefined) {
+  //             updates.push(
+  //               `course name visibility to ${
+  //                 hideCourseName ? "hidden" : "visible"
+  //               }`
+  //             );
+  //           }
+  //           if (hideTime !== undefined) {
+  //             updates.push(
+  //               `time visibility to ${hideTime ? "hidden" : "visible"}`
+  //             );
+  //           }
+  //           if (hideDays !== undefined) {
+  //             updates.push(
+  //               `days visibility to ${hideDays ? "hidden" : "visible"}`
+  //             );
+  //           }
+
+  //           return {
+  //             success: true,
+  //             message: `Successfully updated timetable settings: ${updates.join(
+  //               ", "
+  //             )}`,
+  //             settings: {
+  //               textSize,
+  //               textColor,
+  //               opacity,
+  //               abbreviationFormat,
+  //               hideCourseCode,
+  //               hideCourseName,
+  //               hideTime,
+  //               hideDays,
+  //             },
+  //             refreshSettings: true,
+  //           };
+  //         } catch (error) {
+  //           console.error("Failed to update timetable settings:", error);
+  //           return {
+  //             error:
+  //               error instanceof Error
+  //                 ? error.message
+  //                 : "Failed to update timetable settings",
+  //           };
+  //         }
+  //       },
+  //     },
+  //     updateFontSettings: {
+  //       description:
+  //         "Update font settings for specific timetable elements (course code, course name, time, or days).",
+  //       inputSchema: z.object({
+  //         element: z
+  //           .enum(["courseCode", "courseName", "time", "days"])
+  //           .describe("Which element to update font settings for"),
+  //         fontFamily: z.string().optional().describe("Font family name"),
+  //         fontSize: z
+  //           .number()
+  //           .min(6)
+  //           .max(48)
+  //           .optional()
+  //           .describe("Font size in pixels"),
+  //         fontWeight: z
+  //           .union([z.string(), z.number()])
+  //           .optional()
+  //           .describe("Font weight (normal, bold, 100-900)"),
+  //         fontStyle: z
+  //           .enum(["normal", "italic", "oblique"])
+  //           .optional()
+  //           .describe("Font style"),
+  //         lineHeight: z
+  //           .number()
+  //           .min(0.5)
+  //           .max(3)
+  //           .optional()
+  //           .describe("Line height multiplier"),
+  //         letterSpacing: z
+  //           .number()
+  //           .min(-5)
+  //           .max(10)
+  //           .optional()
+  //           .describe("Letter spacing in pixels"),
+  //         textTransform: z
+  //           .enum(["none", "uppercase", "lowercase", "capitalize"])
+  //           .optional()
+  //           .describe("Text transformation"),
+  //       }),
+  //       execute: async ({
+  //         element,
+  //         fontFamily,
+  //         fontSize,
+  //         fontWeight,
+  //         fontStyle,
+  //         lineHeight,
+  //         letterSpacing,
+  //         textTransform,
+  //       }) => {
+  //         try {
+  //           const updates = [];
+
+  //           if (fontFamily !== undefined) {
+  //             updates.push(`font family to ${fontFamily}`);
+  //           }
+  //           if (fontSize !== undefined) {
+  //             updates.push(`font size to ${fontSize}px`);
+  //           }
+  //           if (fontWeight !== undefined) {
+  //             updates.push(`font weight to ${fontWeight}`);
+  //           }
+  //           if (fontStyle !== undefined) {
+  //             updates.push(`font style to ${fontStyle}`);
+  //           }
+  //           if (lineHeight !== undefined) {
+  //             updates.push(`line height to ${lineHeight}`);
+  //           }
+  //           if (letterSpacing !== undefined) {
+  //             updates.push(`letter spacing to ${letterSpacing}px`);
+  //           }
+  //           if (textTransform !== undefined) {
+  //             updates.push(`text transform to ${textTransform}`);
+  //           }
+
+  //           return {
+  //             success: true,
+  //             message: `Successfully updated ${element} font settings: ${updates.join(
+  //               ", "
+  //             )}`,
+  //             element,
+  //             fontSettings: {
+  //               fontFamily,
+  //               fontSize,
+  //               fontWeight,
+  //               fontStyle,
+  //               lineHeight,
+  //               letterSpacing,
+  //               textTransform,
+  //             },
+  //             refreshSettings: true,
+  //           };
+  //         } catch (error) {
+  //           console.error("Failed to update font settings:", error);
+  //           return {
+  //             error:
+  //               error instanceof Error
+  //                 ? error.message
+  //                 : "Failed to update font settings",
+  //           };
+  //         }
+  //       },
+  //     },
+  //   },
+  // });
+
+  // console.log(result);
+
+  // const response = result.toUIMessageStreamResponse();
+
+  // result.usage
+  //   .then(async (usage) => {
+  //     if (usage && usage.totalTokens) {
+  //       await tokenCheck.recordUsage(usage.totalTokens);
+  //     }
+  //   })
+  //   .catch((error) => {
+  //     console.error("Failed to record token usage:", error);
+  //   });
+
+  // const headers = new Headers(response.headers);
+  // headers.set(
+  //   "X-RateLimit-Tokens-Used",
+  //   tokenCheck.usage.tokensUsed.toString()
+  // );
+  // headers.set(
+  //   "X-RateLimit-Tokens-Remaining",
+  //   tokenCheck.usage.tokensRemaining.toString()
+  // );
+  // headers.set(
+  //   "X-RateLimit-Requests-Used",
+  //   tokenCheck.usage.requestsUsed.toString()
+  // );
+  // headers.set(
+  //   "X-RateLimit-Requests-Remaining",
+  //   tokenCheck.usage.requestsRemaining.toString()
+  // );
+  // headers.set(
+  //   "X-RateLimit-Reset",
+  //   new Date(tokenCheck.usage.resetTime).toISOString()
+  // );
+
+  // if (tokenCheck.usage.warningTriggered) {
+  //   headers.set("X-RateLimit-Warning", "true");
+  //   headers.set(
+  //     "X-RateLimit-Warning-Message",
+  //     tokenCheck.usage.message || "Approaching daily limit"
+  //   );
+  // }
+
+  // return new Response(response.body, {
+  //   status: response.status,
+  //   statusText: response.statusText,
+  //   headers,
+  // });
 }
