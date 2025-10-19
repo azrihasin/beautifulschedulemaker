@@ -11,7 +11,8 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   devIndicators: {
-    position: 'top-right'
+    buildActivity: false,
+    // position: 'top-right'
   },
 };
 

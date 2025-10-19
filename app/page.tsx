@@ -21,7 +21,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, Calendar, FileText, Smartphone } from "lucide-react";
 import { Chatbot } from "@/components/chatbot";
 import { cn } from "@/lib/utils";
 import { useTimetableStore } from "@/stores/timetableStore";
@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/resizable";
 import { useExcalidrawNoteStore } from "@/stores/excalidrawNoteStore";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { streamText } from "@/lib/chrome-ai";
 
 const deviceModels = [
@@ -817,51 +818,65 @@ export default function Home() {
                   }
                   className="w-full h-full flex flex-col"
                 >
-                  <div className="w-full flex justify-between items-center px-4 sm:px-0">
-                    <TabsList className="bg-transparent p-0 h-auto text-sm sm:text-sm">
-                      <TabsTrigger
-                        value="timetable"
-                        className="bg-transparent shadow-none rounded-none px-0 py-0 text-sm sm:text-sm data-[state=active]:bg-transparent data-[state=active]:shadow-none"
-                      >
-                        Timetable
-                      </TabsTrigger>
-                      <TabsTrigger
-                        value="note-list"
-                        className="bg-transparent shadow-none rounded-none px-0 py-0 ml-4 text-sm sm:text-sm data-[state=active]:bg-transparent data-[state=active]:shadow-none"
-                      >
-                        Notes
-                      </TabsTrigger>
+                  <div className="w-full flex items-center justify-end px-4 sm:px-0">
+                    <TabsList className="bg-transparent p-0 h-auto text-sm sm:text-sm flex items-center gap-2">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <TabsTrigger
+                            value="timetable"
+                            className="bg-transparent shadow-none rounded-md px-3 py-2 text-sm sm:text-sm cursor-pointer hover:bg-accent/50 data-[state=active]:bg-gray-200 data-[state=active]:text-gray-800 data-[state=active]:shadow-sm transition-all duration-200 flex items-center justify-center"
+                          >
+                            <Calendar className={cn("h-4 w-4 transition-all duration-200", activeTab === "timetable" && "scale-110")} />
+                          </TabsTrigger>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Timetable</p>
+                        </TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <TabsTrigger
+                            value="note-list"
+                            className="bg-transparent shadow-none rounded-md px-3 py-2 text-sm sm:text-sm cursor-pointer hover:bg-accent/50 data-[state=active]:bg-gray-200 data-[state=active]:text-gray-800 data-[state=active]:shadow-sm transition-all duration-200 flex items-center justify-center"
+                          >
+                            <FileText className={cn("h-4 w-4 transition-all duration-200", activeTab === "note-list" && "scale-110")} />
+                          </TabsTrigger>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Notes</p>
+                        </TooltipContent>
+                      </Tooltip>
+                      <DropdownMenu>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <DropdownMenuTrigger className="bg-transparent shadow-none rounded-md px-2 py-2 text-sm sm:text-sm data-[state=open]:bg-accent hover:bg-accent cursor-pointer transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-ring flex items-center justify-center">
+                              <Smartphone className="h-4 w-4" />
+                            </DropdownMenuTrigger>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Timetable Size</p>
+                          </TooltipContent>
+                        </Tooltip>
+                        <DropdownMenuContent align="end" className="w-64 max-h-60 overflow-y-auto">
+                          {deviceModels.map((device) => (
+                            <DropdownMenuItem
+                              key={device.model}
+                              onClick={() => handleDeviceSelect(device)}
+                              className="cursor-pointer"
+                            >
+                              <div className="flex flex-col">
+                                <span className="font-medium">
+                                  {device.model}
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  {device.width} × {device.height}
+                                </span>
+                              </div>
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </TabsList>
-
-                    <div className="flex items-center gap-3">
-                      {activeTab === "timetable" && (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger className="flex items-center text-primary text-sm font-medium rounded-2xl px-3 py-2 border border-input-border hover:bg-input-hover cursor-pointer transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-ring bg-white">
-                            📱
-                            <span className="ml-1">{selectedDevice.model}</span>
-                            <ChevronDownIcon className="ml-2 h-4 w-4" />
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-64">
-                            {deviceModels.map((device) => (
-                              <DropdownMenuItem
-                                key={device.model}
-                                onClick={() => handleDeviceSelect(device)}
-                                className="cursor-pointer"
-                              >
-                                <div className="flex flex-col">
-                                  <span className="font-medium">
-                                    {device.model}
-                                  </span>
-                                  <span className="text-xs text-muted-foreground">
-                                    {device.width} × {device.height}
-                                  </span>
-                                </div>
-                              </DropdownMenuItem>
-                            ))}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      )}
-                    </div>
                   </div>
 
                   <TabsContent value="note-list" className="flex-1 mt-0">
