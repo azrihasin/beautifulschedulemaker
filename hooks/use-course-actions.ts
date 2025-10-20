@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { useCourseStore } from '@/stores/courseStore';
 import { useTimetableStore } from '@/stores/timetableStore';
 import { createCourseForCurrentTimetable } from '@/lib/course-timetable-helpers';
-import type { CourseWithSessions } from '@/lib/supabase/database.types';
+import type { Course as StoreCourse } from '@/stores/types';
 
 // Types for course actions matching the AI agent response contract
 export interface CourseInput {

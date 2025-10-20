@@ -145,7 +145,6 @@ export function withTokenLimitWrapper(
 function extractTokenUsageFromResponse(response: Response): number | null {
   // Check for common AI SDK token usage headers
   const tokenHeader = response.headers.get('x-ai-tokens-used') || 
-                     response.headers.get('x-openai-tokens') ||
                      response.headers.get('x-tokens-consumed');
   
   if (tokenHeader) {

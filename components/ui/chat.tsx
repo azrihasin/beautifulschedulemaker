@@ -222,7 +222,7 @@ export function ChatMessages({
 
   return (
     <div
-      className="[scrollbar-color:rgb(113_113_122)_transparent] [scrollbar-width:thin] overflow-y-auto pb-4 grid grid-cols-1"
+      className="scrollbar-thin scrollbar-track-transparent scrollbar-thumb-zinc-500 scrollbar-corner-transparent no-scrollbar-arrows overflow-y-auto pb-4 grid grid-cols-1"
       ref={containerRef}
       onScroll={handleScroll}
       onTouchStart={handleTouchStart}>

@@ -2,7 +2,7 @@
  * Mock data for testing the Three-View Notes System
  * 
  * This file provides sample note data for development and testing purposes.
- * In production, this data will come from the Supabase database.
+ * In production, this data will come from local storage or a database.
  */
 
 import { NoteCard, NOTE_COLOR_PALETTE } from '@/lib/types/three-view-notes';

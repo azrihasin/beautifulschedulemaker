@@ -1,9 +1,6 @@
 import { useCourseStore } from '../stores/courseStore';
 import { useTimetableStore } from '../stores/timetableStore';
-import type { CourseWithSessions, CourseWithSessionsInput } from './supabase/database.types';
-import { createClient } from './supabase/client';
-
-const supabase = createClient();
+import type { Course } from '../stores/types';
 
 /**
  * Helper functions to manage the relationship between courses and timetables
@@ -13,17 +10,12 @@ const supabase = createClient();
 
 /**
  * Create a new course tied to the current active timetable
- * @param courseData - Course data without user_id and timetable_id
- * @returns Promise<CourseWithSessions> - The created course
+ * @param courseData - Course data
+ * @returns Promise<Course> - The created course
  */
 export const createCourseForCurrentTimetable = async (
-  courseData: CourseWithSessionsInput
-): Promise<CourseWithSessions> => {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    throw new Error('User not authenticated');
-  }
-
+  courseData: Omit<Course, 'id'>
+): Promise<Course> => {
   const { activeTimetableId } = useTimetableStore.getState();
   if (!activeTimetableId) {
     throw new Error('No active timetable selected');
@@ -31,12 +23,7 @@ export const createCourseForCurrentTimetable = async (
 
   const { addCourse } = useCourseStore.getState();
   
-  const courseWithoutTimetableId = {
-    ...courseData,
-    user_id: user.id
-  };
-
-  return addCourse(activeTimetableId, courseWithoutTimetableId);
+  return addCourse(activeTimetableId, courseData);
 };
 
 /**
@@ -76,32 +63,25 @@ export const createNewTimetableWithCourses = async (timetableName: string): Prom
  * @param timetableId - The ID of the timetable to delete
  */
 export const deleteTimetableWithCourses = async (timetableId: string): Promise<void> => {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    throw new Error('User not authenticated');
+  // Delete courses for this timetable from local store
+  const { resetCourses } = useCourseStore.getState();
+  const { activeTimetableId } = useTimetableStore.getState();
+  
+  // If deleting the active timetable, reset courses
+  if (activeTimetableId === timetableId) {
+    await resetCourses();
   }
 
-  // Delete all courses for this timetable first
-  const { error: coursesError } = await supabase
-    .from('courses')
-    .delete()
-    .eq('user_id', user.id)
-    .eq('timetable_id', timetableId);
-
-  if (coursesError) {
-    throw new Error(`Failed to delete courses: ${coursesError.message}`);
-  }
-
-  // Then delete the timetable
+  // Delete the timetable from local store
   const { deleteTimetable } = useTimetableStore.getState();
   await deleteTimetable(timetableId);
 };
 
 /**
  * Get all courses for the current timetable
- * @returns CourseWithSessions[] - Array of courses for the current timetable
+ * @returns Course[] - Array of courses for the current timetable
  */
-export const getCurrentTimetableCourses = (): CourseWithSessions[] => {
+export const getCurrentTimetableCourses = (): Course[] => {
   const { courses } = useCourseStore.getState();
   return courses;
 };

@@ -1,61 +1,19 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 
-import { createClient } from "../lib/supabase/client";
 import type { 
   Note, 
   NoteContext, 
   NoteStore, 
-  DatabaseNote,
   JSONContent 
 } from "./types";
 
 // Check if we're in a browser environment
 const isBrowser = typeof window !== 'undefined';
 
-// Supabase client
-const supabase = createClient();
-
-// Helper function to transform database note to Note
-const transformDatabaseNote = (dbNote: DatabaseNote): Note => ({
-  id: dbNote.id,
-  userId: dbNote.user_id,
-  timetableId: dbNote.timetable_id,
-  courseId: dbNote.course_id,
-  sessionId: dbNote.session_id,
-  content: dbNote.content || { type: 'doc', content: [] },
-  isPinned: dbNote.is_pinned,
-  tags: dbNote.tags || [],
-  createdAt: new Date(dbNote.created_at),
-  updatedAt: new Date(dbNote.updated_at),
-});
-
-// Helper function to transform Note to database format
-const transformNoteForDB = (note: Partial<Note>): Partial<DatabaseNote> => ({
-  id: note.id,
-  user_id: note.userId,
-  timetable_id: note.timetableId,
-  course_id: note.courseId,
-  session_id: note.sessionId,
-  content: note.content || { type: 'doc', content: [] },
-  is_pinned: note.isPinned || false,
-  tags: note.tags || [],
-});
-
-// Retry mechanism for Supabase operations
-const withRetry = async <T>(
-  operation: () => Promise<T>,
-  maxRetries: number = 3
-): Promise<T> => {
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      return await operation();
-    } catch (error) {
-      if (i === maxRetries - 1) throw error;
-      await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
-    }
-  }
-  throw new Error('Max retries exceeded');
+// Helper function to generate unique IDs
+const generateId = (): string => {
+  return Date.now().toString(36) + Math.random().toString(36).substr(2);
 };
 
 
@@ -168,85 +126,50 @@ export const useNoteStore = create<NoteStore>()(
       },
 
       loadNote: async (context: NoteContext): Promise<Note> => {
+        const { notes } = get();
         set({ isLoading: true, error: null, currentContext: context });
-        
+
         try {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (!user) {
-            throw new Error('User not authenticated');
-          }
-
-          // Build query based on context
-          let query = supabase
-            .from('notes')
-            .select('*')
-            .eq('user_id', user.id)
-            .eq('timetable_id', context.timetableId);
-
-          // Add context-specific filters
-          if (context.type === 'session' && context.sessionId) {
-            query = query.eq('session_id', context.sessionId);
-          } else if (context.type === 'course' && context.courseId) {
-            query = query
-              .eq('course_id', context.courseId)
-              .is('session_id', null);
-          } else if (context.type === 'timetable') {
-            query = query
-              .is('course_id', null)
-              .is('session_id', null);
-          }
-
-          // Try to get existing note, but don't retry on "not found" errors
-          let data: any;
-          let error: any;
-
-          try {
-            const result = await query.single();
-            data = result.data;
-            error = result.error;
-          } catch (queryError: any) {
-            error = queryError;
-          }
+          // Find existing note based on context
+          const existingNote = notes.find(note => 
+            note.timetableId === context.timetableId &&
+            note.courseId === context.courseId &&
+            note.sessionId === context.sessionId
+          );
 
           let note: Note;
 
-          if (error && error.code === 'PGRST116') {
-            // Note doesn't exist, create a new one
-            const newNote: Omit<Note, 'id' | 'createdAt' | 'updatedAt'> = {
-              userId: user.id,
+          if (existingNote) {
+            note = existingNote;
+          } else {
+            // Create a new note locally
+            note = {
+              id: generateId(),
+              userId: 'local-user', // Since we don't have auth, use a placeholder
               timetableId: context.timetableId,
               courseId: context.courseId,
               sessionId: context.sessionId,
               content: createEmptyContent(),
               isPinned: false,
               tags: [],
+              createdAt: new Date(),
+              updatedAt: new Date(),
             };
 
-            const dbNote = transformNoteForDB(newNote);
-            const { data: insertedData, error: insertError } = await withRetry(async () => {
-              return await supabase
-                .from('notes')
-                .insert(dbNote)
-                .select()
-                .single();
-            });
-
-            if (insertError) throw insertError;
-            note = transformDatabaseNote(insertedData);
-          } else if (error) {
-            throw error;
-          } else {
-            note = transformDatabaseNote(data);
+            // Add to local state
+            set(state => ({
+              notes: [...state.notes, note],
+              currentNote: note,
+              currentContext: context,
+              isLoading: false
+            }));
           }
 
-          // Update local state
-          set((state) => ({
-            notes: state.notes.some(n => n.id === note.id) 
-              ? state.notes.map(n => n.id === note.id ? note : n)
-              : [...state.notes, note],
+          set({
             currentNote: note,
+            currentContext: context,
             isLoading: false
-          }));
+          });
 
           return note;
         } catch (error) {
@@ -261,11 +184,6 @@ export const useNoteStore = create<NoteStore>()(
         set({ error: null });
         
         try {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (!user) {
-            throw new Error('User not authenticated');
-          }
-
           const currentNote = get().currentNote;
           if (!currentNote) {
             throw new Error('No current note to save');
@@ -276,17 +194,6 @@ export const useNoteStore = create<NoteStore>()(
             ...noteUpdate,
             updatedAt: new Date()
           };
-
-          const dbUpdate = transformNoteForDB(updatedNote);
-          const { error } = await withRetry(async () => {
-            return await supabase
-              .from('notes')
-              .update(dbUpdate)
-              .eq('id', updatedNote.id)
-              .eq('user_id', user.id);
-          });
-
-          if (error) throw error;
 
           // Update local state
           set((state) => ({
@@ -305,21 +212,6 @@ export const useNoteStore = create<NoteStore>()(
         set({ error: null });
         
         try {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (!user) {
-            throw new Error('User not authenticated');
-          }
-
-          const { error } = await withRetry(async () => {
-            return await supabase
-              .from('notes')
-              .delete()
-              .eq('id', id)
-              .eq('user_id', user.id);
-          });
-
-          if (error) throw error;
-
           // Update local state
           set((state) => ({
             notes: state.notes.filter(n => n.id !== id),
@@ -370,90 +262,34 @@ export const useNoteStore = create<NoteStore>()(
 
       getNotesForAI: async (query: string): Promise<Note[]> => {
         try {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (!user) {
-            throw new Error('User not authenticated');
-          }
-
-          // For now, return all notes for the user
-          // In the future, this could be enhanced with full-text search
-          const { data, error } = await withRetry(async () => {
-            return await supabase
-              .from('notes')
-              .select('*')
-              .eq('user_id', user.id)
-              .order('updated_at', { ascending: false });
+          const { notes } = get();
+          // Simple text search in local notes
+          const filteredNotes = notes.filter(note => {
+            const contentText = JSON.stringify(note.content).toLowerCase();
+            return contentText.includes(query.toLowerCase());
           });
-
-          if (error) throw error;
-
-          const notes = (data || []).map(transformDatabaseNote);
-          
-          // Update local cache
-          set((state) => ({
-            notes: notes
-          }));
-
-          return notes;
+          return filteredNotes.slice(0, 10); // Limit to 10 results
         } catch (error) {
           console.error('Failed to get notes for AI:', error);
-          const errorMessage = error instanceof Error ? error.message : 'Failed to get notes for AI';
-          set({ error: errorMessage });
-          throw new Error(errorMessage);
+          return [];
         }
       },
 
-      // Enhanced error handling and offline behavior
+      // Offline support methods (simplified for local storage)
       syncOfflineChanges: async (): Promise<void> => {
-        const state = get();
-        const offlineChanges = state.notes.filter(note => 
-          note.updatedAt > new Date(Date.now() - 24 * 60 * 60 * 1000) // Last 24 hours
-        );
-
-        if (offlineChanges.length === 0) return;
-
-        try {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (!user) return;
-
-          for (const note of offlineChanges) {
-            try {
-              const dbUpdate = transformNoteForDB(note);
-              await supabase
-                .from('notes')
-                .upsert(dbUpdate)
-                .eq('id', note.id);
-            } catch (error) {
-              console.warn(`Failed to sync note ${note.id}:`, error);
-            }
-          }
-        } catch (error) {
-          console.warn('Failed to sync offline changes:', error);
-        }
+        // No-op for local storage
+        console.log('Local storage - no sync needed');
       },
 
-      // Check network connectivity and provide user feedback
+      // Check connectivity (always true for local storage)
       checkConnectivity: async (): Promise<boolean> => {
-        try {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (!user) {
-            set({ error: 'Connection lost. Changes will be saved locally and synced when connection is restored.' });
-            return false;
-          }
-          return true;
-        } catch (error) {
-          set({ error: 'Connection lost. Changes will be saved locally and synced when connection is restored.' });
-          return false;
-        }
+        return true;
       },
 
-      // Retry failed operations
+      // Retry failed operations (no-op for local storage)
       retryFailedOperations: async (): Promise<void> => {
-        const isOnline = await get().checkConnectivity();
-        if (isOnline) {
-          await get().syncOfflineChanges();
-          set({ error: null });
-        }
+        // No-op for local storage
+        console.log('Local storage - no retry needed');
       },
     }),
     {

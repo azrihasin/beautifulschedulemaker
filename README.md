@@ -27,7 +27,7 @@ An AI-powered timetable management application with integrated note-taking capab
 - **Loading & Error States**: ✅ Comprehensive skeleton loading animations and retry functionality
 - **Accessibility**: ✅ Full keyboard navigation, ARIA labels, and screen reader support
 - **Responsive Design**: ✅ Mobile-first design with tablet and desktop optimizations
-- **Database Integration**: ✅ Full Supabase CRUD operations with user context and security
+- **Local Storage**: ✅ Full local persistence with IndexedDB for offline support
 
 #### Context-Aware Note Drawer ✅ **PRODUCTION READY**
 - **Hierarchical Notes**: ✅ Three-level note organization (timetable → course → session)
@@ -38,11 +38,10 @@ An AI-powered timetable management application with integrated note-taking capab
 - **Pinned Notes**: ✅ Pin important notes for quick access
 - **Offline Support**: ✅ Local caching with automatic sync when connection restored
 
-### 🔐 User Authentication & Data Persistence
-- Secure user accounts with Supabase integration
-- Local storage with IndexedDB and cloud synchronization
-- Row-level security for data protection
-- Comprehensive database schema with migrations
+### 🔐 Data Persistence
+- Local storage with IndexedDB for offline support
+- Automatic data persistence and recovery
+- Comprehensive local data management
 
 ### ⚡ Performance Optimizations
 - **Rate Limiting**: 30 requests per 15-minute window to prevent API abuse
@@ -56,7 +55,6 @@ An AI-powered timetable management application with integrated note-taking capab
 ### Prerequisites
 - Node.js 18+ 
 - npm, yarn, pnpm, or bun
-- Supabase account (for authentication and database)
 
 ### Installation
 
@@ -75,14 +73,7 @@ yarn install
 pnpm install
 ```
 
-3. Set up environment variables:
-```bash
-cp .env.local.example .env.local
-```
-
-Fill in your Supabase credentials and OpenAI API key in `.env.local`.
-
-4. Run the development server:
+3. Run the development server:
 ```bash
 npm run dev
 # or
@@ -93,7 +84,7 @@ pnpm dev
 bun dev
 ```
 
-5. Open [http://localhost:3000](http://localhost:3000) with your browser.
+4. Open [http://localhost:3000](http://localhost:3000) with your browser.
 
 ## Usage
 
@@ -117,7 +108,7 @@ bun dev
    - Clean header with Back, Title input, and Save controls
    - Full drawing and visual note-taking capabilities
    - Distraction-free editing experience
-   - Automatic scene data persistence to Supabase
+   - Automatic scene data persistence to local storage
 
 **Context-Aware Note Drawer:**
 - Click on any timetable element to open contextual notes
@@ -147,16 +138,13 @@ bun dev
 - **@excalidraw/excalidraw** - Visual note-taking with drawing capabilities
 - **Framer Motion** - Animation library
 
-### Backend & Database
-- **Supabase** - Authentication and PostgreSQL database with RLS
-- **OpenAI API** - AI-powered course management with rate limiting
-- **Vercel AI SDK** - Streaming responses and chat utilities
-- **Database Migrations** - Comprehensive schema with automated migrations
+### Data Storage
+- **IndexedDB** - Local browser storage for offline support
+- **Local Persistence** - Automatic data saving and recovery
 
 ### State Management
 - **Zustand** - Lightweight state management with persistence
 - **IndexedDB** - Local storage for large data and offline support
-- **Supabase Sync** - Real-time database synchronization
 
 ### Testing & Development
 - **Vitest** - Testing framework
@@ -193,10 +181,7 @@ stores/
 └── types.ts               # ✅ Comprehensive TypeScript interfaces
 
 lib/
-├── supabase/              # Database integration and migrations
-│   ├── migrations/        # ✅ Complete database schema migrations
-│   ├── excalidraw-notes.ts # ✅ Three-view notes database operations
-│   └── database.types.ts  # ✅ Generated TypeScript types
+├── storage/               # Local storage utilities and persistence
 ├── performance-monitor.ts # ✅ Performance tracking and optimization
 ├── rate-limiter.ts        # ✅ API rate limiting and abuse prevention
 ├── response-cache.ts      # ✅ Intelligent response caching
@@ -204,9 +189,9 @@ lib/
 ```
 
 ### Data Flow
-1. **User Input** → AI Chat or Direct UI Interaction
+1. **User Input** → Direct UI Interaction
 2. **State Updates** → Zustand stores with automatic persistence
-3. **Database Sync** → Supabase with row-level security
+3. **Local Storage** → IndexedDB with automatic sync
 4. **UI Updates** → React components with optimistic updates
 
 ## Excalidraw Integration
@@ -249,8 +234,7 @@ The Excalidraw integration includes several performance optimizations:
 
 ### Developer Resources
 - **[API Reference](docs/API_REFERENCE.md)** - Complete API documentation and data structures
-- **[Database Setup](DATABASE_SETUP.md)** - Database schema and migration instructions
-- **[Excalidraw Notes Migration](lib/supabase/migrations/README_excalidraw_notes.md)** - Three-view notes database setup
+- **[Local Storage Guide](docs/LOCAL_STORAGE_GUIDE.md)** - Local data persistence and management
 
 ### Testing
 
@@ -273,8 +257,8 @@ npm test -- components/__tests__/note-list-view.test.tsx
 npm test -- components/__tests__/excalidraw-note-editor.test.tsx
 npm test -- components/__tests__/note-drawer.test.tsx
 
-# Database and utility tests
-npm test -- lib/supabase/__tests__/excalidraw-notes.test.ts
+# Storage and utility tests
+npm test -- lib/storage/__tests__/local-persistence.test.ts
 npm test -- __tests__/performance-optimization.test.ts
 
 # Run with coverage
@@ -295,7 +279,6 @@ npm run test:coverage
 To learn more about the technologies used:
 
 - [Next.js Documentation](https://nextjs.org/docs) - React framework features and API
-- [Supabase Documentation](https://supabase.com/docs) - Database and authentication
 - [Excalidraw Documentation](https://docs.excalidraw.com/) - Visual drawing and note-taking
 - [Zustand Documentation](https://zustand-demo.pmnd.rs/) - State management
 - [Tailwind CSS](https://tailwindcss.com/docs) - Styling framework

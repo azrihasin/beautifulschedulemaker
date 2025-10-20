@@ -23,6 +23,9 @@ export interface CourseWithSessions {
   updatedAt: Date;
 }
 
+// Type alias for easier reference
+export type Course = CourseWithSessions;
+
 export interface Chat {
   id: string;
   name: string;
@@ -165,36 +168,4 @@ export interface NoteStore {
   syncOfflineChanges: () => Promise<void>;
   checkConnectivity: () => Promise<boolean>;
   retryFailedOperations: () => Promise<void>;
-}
-
-// Database types for Supabase
-export interface DatabaseTimetable {
-  id: string;
-  user_id: string;
-  name: string;
-  created_at: string;
-  updated_at: string;
-  is_active: boolean;
-}
-
-export interface DatabaseChat {
-  id: string;
-  timetable_id: string;
-  name: string;
-  messages: any; // JSONB in database
-  created_at: string;
-  updated_at: string;
-}
-
-export interface DatabaseNote {
-  id: string;
-  user_id: string;
-  timetable_id: string;
-  course_id?: string;
-  session_id?: string;
-  content: any; // JSONB in database
-  is_pinned: boolean;
-  tags: string[];
-  created_at: string;
-  updated_at: string;
 }

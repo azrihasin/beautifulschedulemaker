@@ -30,6 +30,7 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { Separator } from "./ui/separator";
+import { ScrollArea } from "./ui/scroll-area";
 // Remove this import
 // import Cropper from 'react-easy-crop';
 
@@ -128,274 +129,278 @@ export default function SettingsArea({ setSettingsMode }: any) {
     setBackgroundRotation,
   } = useSettingsStore();
   return (
-    <div className="p-4 w-full h-full border rounded-xl space-y-4 max-h-[80vh] overflow-auto bg-[#f2f2f6]">
-      <button
-        onClick={() => setSettingsMode(false)}
-        className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
-      >
-        <ArrowLeft className="h-4 w-4  cursor-pointer" />
-        <span className="cursor-pointer">Back</span>
-      </button>
-
-      <div className="p-4 bg-white rounded-xl border border-[#E0E0E0] shadow-sm">
-        <p className="text-sm font-medium mb-3">Background Image</p>
-        <div className="flex gap-2 items-center mb-2">
-          <input
-            type="file"
-            accept="image/*"
-            id="background-upload"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) {
-                // Check file size before processing
-                const maxFileSize = 5 * 1024 * 1024; // 5MB
-                if (file.size > maxFileSize) {
-                  alert('Image file is too large. Please choose a file smaller than 5MB.');
-                  return;
-                }
-                
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                  const imageUrl = event.target?.result as string;
-                  console.log('Setting background image:', imageUrl.substring(0, 50) + '...');
-                  setBackgroundImage(imageUrl);
-                };
-                reader.onerror = (error) => {
-                  console.error('Error reading file:', error);
-                  alert('Error reading the image file. Please try again.');
-                };
-                reader.readAsDataURL(file);
-              }
-            }}
-          />
-          <label
-            htmlFor="background-upload"
-            className="px-3 py-1 text-xs rounded transition-colors cursor-pointer bg-[#F5F5F5] hover:bg-[#EEEEEE]"
-          >
-            Choose Image
-          </label>
+    <div className="w-full h-[500px] border rounded-xl bg-[#f2f2f6] flex flex-col overflow-hidden">
+      <ScrollArea className="flex-1">
+        <div className="p-4 space-y-4">
           <button
-            onClick={() => {
-              setBackgroundImage(null);
-              setBackgroundSize(100);
-              setBackgroundPositionX(50);
-              setBackgroundPositionY(50);
-              setBackgroundRotation(0);
-            }}
-            className="px-3 py-1 text-xs rounded transition-colors cursor-pointer bg-[#F5F5F5] hover:bg-[#EEEEEE]"
+            onClick={() => setSettingsMode(false)}
+            className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
           >
-            Clear
+            <ArrowLeft className="h-4 w-4  cursor-pointer" />
+            <span className="cursor-pointer">Back</span>
           </button>
-        </div>
 
-        {/* Image Preview */}
-        {backgroundImage && (
-          <div className="mt-2 p-2 bg-[#F9F9F9] rounded border">
-            <img
-              src={backgroundImage}
-              alt="Background preview"
-              className="max-w-full h-32 object-cover rounded"
-            />
-            <p className="text-xs text-muted-foreground mt-1">
-              Preview of selected background image
+          <div className="p-4 bg-white rounded-xl border border-[#E0E0E0] shadow-sm">
+            <p className="text-sm font-medium mb-3">Background Image</p>
+            <div className="flex gap-2 items-center mb-2">
+              <input
+                type="file"
+                accept="image/*"
+                id="background-upload"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    // Check file size before processing
+                    const maxFileSize = 5 * 1024 * 1024; // 5MB
+                    if (file.size > maxFileSize) {
+                      alert('Image file is too large. Please choose a file smaller than 5MB.');
+                      return;
+                    }
+                    
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                      const imageUrl = event.target?.result as string;
+                      console.log('Setting background image:', imageUrl.substring(0, 50) + '...');
+                      setBackgroundImage(imageUrl);
+                    };
+                    reader.onerror = (error) => {
+                      console.error('Error reading file:', error);
+                      alert('Error reading the image file. Please try again.');
+                    };
+                    reader.readAsDataURL(file);
+                  }
+                }}
+              />
+              <label
+                htmlFor="background-upload"
+                className="px-3 py-1 text-xs rounded transition-colors cursor-pointer bg-[#F5F5F5] hover:bg-[#EEEEEE]"
+              >
+                Choose Image
+              </label>
+              <button
+                onClick={() => {
+                  setBackgroundImage(null);
+                  setBackgroundSize(100);
+                  setBackgroundPositionX(50);
+                  setBackgroundPositionY(50);
+                  setBackgroundRotation(0);
+                }}
+                className="px-3 py-1 text-xs rounded transition-colors cursor-pointer bg-[#F5F5F5] hover:bg-[#EEEEEE]"
+              >
+                Clear
+              </button>
+            </div>
+
+            {/* Image Preview */}
+            {backgroundImage && (
+              <div className="mt-2 p-2 bg-[#F9F9F9] rounded border">
+                <img
+                  src={backgroundImage}
+                  alt="Background preview"
+                  className="max-w-full h-32 object-cover rounded"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Preview of selected background image
+                </p>
+              </div>
+            )}
+
+            {/* Background Controls */}
+            {backgroundImage && (
+              <div className="mt-4 space-y-4">
+                {/* Size Control */}
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <ZoomIn className="w-4 h-4 text-gray-600" />
+                    <p className="text-sm font-medium">Size</p>
+                  </div>
+                  <Slider
+                    min={5}
+                    max={500}
+                    step={5}
+                    value={[backgroundSize]}
+                    onValueChange={(val: any) => setBackgroundSize(val[0])}
+                    className="w-full"
+                  />
+                  <p className="text-xs mt-1 text-muted-foreground">
+                    {backgroundSize}%
+                  </p>
+                </div>
+
+                {/* Position Controls */}
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Move className="w-4 h-4 text-gray-600" />
+                    <p className="text-sm font-medium">Position</p>
+                  </div>
+                  <div className="space-y-2">
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">
+                        Horizontal: {backgroundPositionX}%
+                      </p>
+                      <Slider
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={[backgroundPositionX]}
+                        onValueChange={(val: any) => setBackgroundPositionX(val[0])}
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">
+                        Vertical: {backgroundPositionY}%
+                      </p>
+                      <Slider
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={[backgroundPositionY]}
+                        onValueChange={(val: any) => setBackgroundPositionY(val[0])}
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Rotation Control */}
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <RotateCw className="w-4 h-4 text-gray-600" />
+                    <p className="text-sm font-medium">Rotation</p>
+                  </div>
+                  <Slider
+                    min={-180}
+                    max={180}
+                    step={1}
+                    value={[backgroundRotation]}
+                    onValueChange={(val: any) => setBackgroundRotation(val[0])}
+                    className="w-full"
+                  />
+                  <p className="text-xs mt-1 text-muted-foreground">
+                    {backgroundRotation}°
+                  </p>
+                </div>
+
+                {/* Reset Button */}
+                <button
+                  onClick={() => {
+                    setBackgroundSize(100);
+                    setBackgroundPositionX(50);
+                    setBackgroundPositionY(50);
+                    setBackgroundRotation(0);
+                  }}
+                  className="w-full px-3 py-2 text-sm rounded transition-colors cursor-pointer bg-[#F5F5F5] hover:bg-[#EEEEEE] border"
+                >
+                  Reset to Default
+                </button>
+              </div>
+            )}
+
+            <p className="text-xs mt-1 text-muted-foreground">
+              Supported formats: JPG, PNG, GIF
             </p>
           </div>
-        )}
 
-        {/* Background Controls */}
-        {backgroundImage && (
-          <div className="mt-4 space-y-4">
-            {/* Size Control */}
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <ZoomIn className="w-4 h-4 text-gray-600" />
-                <p className="text-sm font-medium">Size</p>
-              </div>
-              <Slider
-                min={5}
-                max={500}
-                step={5}
-                value={[backgroundSize]}
-                onValueChange={(val: any) => setBackgroundSize(val[0])}
-                className="w-full"
-              />
-              <p className="text-xs mt-1 text-muted-foreground">
-                {backgroundSize}%
-              </p>
-            </div>
-
-            {/* Position Controls */}
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <Move className="w-4 h-4 text-gray-600" />
-                <p className="text-sm font-medium">Position</p>
-              </div>
-              <div className="space-y-2">
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">
-                    Horizontal: {backgroundPositionX}%
-                  </p>
-                  <Slider
-                    min={0}
-                    max={100}
-                    step={1}
-                    value={[backgroundPositionX]}
-                    onValueChange={(val: any) => setBackgroundPositionX(val[0])}
-                    className="w-full"
-                  />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">
-                    Vertical: {backgroundPositionY}%
-                  </p>
-                  <Slider
-                    min={0}
-                    max={100}
-                    step={1}
-                    value={[backgroundPositionY]}
-                    onValueChange={(val: any) => setBackgroundPositionY(val[0])}
-                    className="w-full"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Rotation Control */}
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <RotateCw className="w-4 h-4 text-gray-600" />
-                <p className="text-sm font-medium">Rotation</p>
-              </div>
-              <Slider
-                min={-180}
-                max={180}
-                step={1}
-                value={[backgroundRotation]}
-                onValueChange={(val: any) => setBackgroundRotation(val[0])}
-                className="w-full"
-              />
-              <p className="text-xs mt-1 text-muted-foreground">
-                {backgroundRotation}°
-              </p>
-            </div>
-
-            {/* Reset Button */}
-            <button
-              onClick={() => {
-                setBackgroundSize(100);
-                setBackgroundPositionX(50);
-                setBackgroundPositionY(50);
-                setBackgroundRotation(0);
-              }}
-              className="w-full px-3 py-2 text-sm rounded transition-colors cursor-pointer bg-[#F5F5F5] hover:bg-[#EEEEEE] border"
-            >
-              Reset to Default
-            </button>
+          <div className="p-4 bg-white rounded-xl border border-[#E0E0E0]">
+            <p className="text-sm font-medium mb-3">Opacity</p>
+            <Slider
+              min={0}
+              max={100}
+              step={1}
+              value={[opacity]}
+              onValueChange={(val: any) => setOpacity(val[0])}
+            />
+            <p className="text-xs mt-2 text-muted-foreground">{opacity}%</p>
           </div>
-        )}
 
-        <p className="text-xs mt-1 text-muted-foreground">
-          Supported formats: JPG, PNG, GIF
-        </p>
-      </div>
+          <div className="p-4 bg-white rounded-xl border border-[#E0E0E0]">
+            <p className="text-sm font-medium mb-3">Day Format</p>
+            <div className="flex gap-1">
+              {Object.keys(abbreviationFormats).map((format) => (
+                <button
+                  key={format}
+                  onClick={() => setAbbreviationFormat(format)}
+                  className={`px-3 py-1 text-xs rounded transition-colors cursor-pointer ${
+                    abbreviationFormat === format
+                      ? "bg-[#e6f2ff] text-blue-500"
+                      : "bg-[#F5F5F5] hover:bg-[#EEEEEE]"
+                  }`}
+                >
+                  {format}
+                </button>
+              ))}
+            </div>
+          </div>
 
-      <div className="p-4 bg-white rounded-xl border border-[#E0E0E0]">
-        <p className="text-sm font-medium mb-3">Opacity</p>
-        <Slider
-          min={0}
-          max={100}
-          step={1}
-          value={[opacity]}
-          onValueChange={(val: any) => setOpacity(val[0])}
-        />
-        <p className="text-xs mt-2 text-muted-foreground">{opacity}%</p>
-      </div>
+          {/* Course Code Settings */}
+          <div className="p-4 bg-white rounded-xl border border-[#E0E0E0]">
+            <ToolbarSection
+              label="Course Code"
+              settings={courseCode}
+              setters={{
+                setFontFamily: setCourseCodeFontFamily,
+                setFontSize: setCourseCodeFontSize,
+                setFontWeight: setCourseCodeFontWeight,
+                setFontStyle: setCourseCodeFontStyle,
+                setColor: setCourseCodeColor,
+                setTextAlign: setCourseCodeTextAlign,
+                setHideCourseCode: setHideCourseCode,
+              }}
+            />
+          </div>
 
-      <div className="p-4 bg-white rounded-xl border border-[#E0E0E0]">
-        <p className="text-sm font-medium mb-3">Day Format</p>
-        <div className="flex gap-1">
-          {Object.keys(abbreviationFormats).map((format) => (
-            <button
-              key={format}
-              onClick={() => setAbbreviationFormat(format)}
-              className={`px-3 py-1 text-xs rounded transition-colors cursor-pointer ${
-                abbreviationFormat === format
-                  ? "bg-[#e6f2ff] text-blue-500"
-                  : "bg-[#F5F5F5] hover:bg-[#EEEEEE]"
-              }`}
-            >
-              {format}
-            </button>
-          ))}
+          {/* Course Name Settings */}
+          <div className="p-4 bg-white rounded-xl border border-[#E0E0E0]">
+            <ToolbarSection
+              label="Course Name"
+              settings={courseName}
+              setters={{
+                setFontFamily: setCourseNameFontFamily,
+                setFontSize: setCourseNameFontSize,
+                setFontWeight: setCourseNameFontWeight,
+                setFontStyle: setCourseNameFontStyle,
+                setColor: setCourseNameColor,
+                setTextAlign: setCourseNameTextAlign,
+                setHideCourseName: setHideCourseName,
+              }}
+            />
+          </div>
+
+          <div className="p-4 bg-white rounded-xl border border-[#E0E0E0]">
+            <ToolbarSection
+              label="Time"
+              settings={time}
+              setters={{
+                setFontFamily: setTimeFontFamily,
+                setFontSize: setTimeFontSize,
+                setFontWeight: setTimeFontWeight,
+                setFontStyle: setTimeFontStyle,
+                setColor: setTimeColor,
+                setTextAlign: setTimeTextAlign,
+                setHideTime: setHideTime,
+              }}
+            />
+          </div>
+
+          <div className="p-4 bg-white rounded-xl border border-[#E0E0E0]">
+            <ToolbarSection
+              label="Days"
+              settings={days}
+              setters={{
+                setFontFamily: setDaysFontFamily,
+                setFontSize: setDaysFontSize,
+                setFontWeight: setDaysFontWeight,
+                setFontStyle: setDaysFontStyle,
+                setColor: setDaysColor,
+                setTextAlign: setDaysTextAlign,
+                setHideDays: setHideDays,
+              }}
+            />
+          </div>
         </div>
-      </div>
-
-      {/* Course Code Settings */}
-      <div className="p-4 bg-white rounded-xl border border-[#E0E0E0]">
-        <ToolbarSection
-          label="Course Code"
-          settings={courseCode}
-          setters={{
-            setFontFamily: setCourseCodeFontFamily,
-            setFontSize: setCourseCodeFontSize,
-            setFontWeight: setCourseCodeFontWeight,
-            setFontStyle: setCourseCodeFontStyle,
-            setColor: setCourseCodeColor,
-            setTextAlign: setCourseCodeTextAlign,
-            setHideCourseCode: setHideCourseCode,
-          }}
-        />
-      </div>
-
-      {/* Course Name Settings */}
-      <div className="p-4 bg-white rounded-xl border border-[#E0E0E0]">
-        <ToolbarSection
-          label="Course Name"
-          settings={courseName}
-          setters={{
-            setFontFamily: setCourseNameFontFamily,
-            setFontSize: setCourseNameFontSize,
-            setFontWeight: setCourseNameFontWeight,
-            setFontStyle: setCourseNameFontStyle,
-            setColor: setCourseNameColor,
-            setTextAlign: setCourseNameTextAlign,
-            setHideCourseName: setHideCourseName,
-          }}
-        />
-      </div>
-
-      <div className="p-4 bg-white rounded-xl border border-[#E0E0E0]">
-        <ToolbarSection
-          label="Time"
-          settings={time}
-          setters={{
-            setFontFamily: setTimeFontFamily,
-            setFontSize: setTimeFontSize,
-            setFontWeight: setTimeFontWeight,
-            setFontStyle: setTimeFontStyle,
-            setColor: setTimeColor,
-            setTextAlign: setTimeTextAlign,
-            setHideTime: setHideTime,
-          }}
-        />
-      </div>
-
-      <div className="p-4 bg-white rounded-xl border border-[#E0E0E0]">
-        <ToolbarSection
-          label="Days"
-          settings={days}
-          setters={{
-            setFontFamily: setDaysFontFamily,
-            setFontSize: setDaysFontSize,
-            setFontWeight: setDaysFontWeight,
-            setFontStyle: setDaysFontStyle,
-            setColor: setDaysColor,
-            setTextAlign: setDaysTextAlign,
-            setHideDays: setHideDays,
-          }}
-        />
-      </div>
+      </ScrollArea>
     </div>
   );
 }

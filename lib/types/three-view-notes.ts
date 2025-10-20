@@ -5,12 +5,22 @@
  * three-view notes system implementation.
  */
 
-import { Database } from '@/lib/supabase/database.types';
+// Local database types for Excalidraw notes
+export interface ExcalidrawNoteRow {
+  id: string;
+  user_id: string;
+  title: string;
+  excalidraw_data: any;
+  preview_text: string;
+  color_accent: string;
+  created_at: string;
+  updated_at: string;
+  context_type: 'timetable' | 'course' | 'session';
+  context_id: string | null;
+}
 
-// Database types from Supabase
-export type ExcalidrawNoteRow = Database['public']['Tables']['excalidraw_notes']['Row'];
-export type ExcalidrawNoteInsert = Database['public']['Tables']['excalidraw_notes']['Insert'];
-export type ExcalidrawNoteUpdate = Database['public']['Tables']['excalidraw_notes']['Update'];
+export type ExcalidrawNoteInsert = Omit<ExcalidrawNoteRow, 'id' | 'created_at' | 'updated_at'>;
+export type ExcalidrawNoteUpdate = Partial<ExcalidrawNoteInsert>;
 
 // View mode for the three-view system
 export type ViewMode = 'timetable' | 'note-list' | 'note-editor';

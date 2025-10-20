@@ -1,12 +1,10 @@
 /**
  * Token-based rate limiter for AI API calls to prevent abuse and manage costs
- * Tracks daily token usage per authenticated user
+ * Tracks daily token usage per IP address
  */
 
-import { createClient } from '@/lib/supabase/server';
-
 interface TokenUsageEntry {
-  userId: string;
+  ipAddress: string;
   date: string; // YYYY-MM-DD format
   tokensUsed: number;
   requestCount: number;
@@ -63,109 +61,46 @@ class TokenRateLimiter {
     return tomorrow.getTime();
   }
 
-  private async getUserIdFromRequest(req: Request): Promise<string | null> {
-    try {
-      const supabase = await createClient();
-      const { data: { user }, error } = await supabase.auth.getUser();
-      
-      if (error || !user) {
-        return null;
-      }
-      
-      return user.id;
-    } catch (error) {
-      console.error('Error getting user from request:', error);
-      return null;
+  private getIpFromRequest(req: Request): string {
+    // Try to get real IP from various headers
+    const forwarded = req.headers.get('x-forwarded-for');
+    const realIp = req.headers.get('x-real-ip');
+    const cfConnectingIp = req.headers.get('cf-connecting-ip');
+    
+    if (forwarded) {
+      return forwarded.split(',')[0].trim();
     }
+    
+    if (realIp) {
+      return realIp;
+    }
+    
+    if (cfConnectingIp) {
+      return cfConnectingIp;
+    }
+    
+    // Fallback to a default identifier
+    return 'unknown-ip';
   }
 
-  private async loadUsageFromDatabase(userId: string, date: string): Promise<TokenUsageEntry | null> {
-    try {
-      const supabase = await createClient();
-      
-      const { data, error } = await supabase
-        .from('user_token_usage')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('usage_date', date)
-        .single();
 
-      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
-        console.error('Error loading token usage:', error);
-        return null;
-      }
 
-      if (!data) {
-        return {
-          userId,
-          date,
-          tokensUsed: 0,
-          requestCount: 0,
-          lastUpdated: Date.now()
-        };
-      }
 
-      return {
-        userId,
-        date,
-        tokensUsed: data.tokens_used || 0,
-        requestCount: data.request_count || 0,
-        lastUpdated: Date.now()
-      };
-    } catch (error) {
-      console.error('Error loading usage from database:', error);
-      return {
-        userId,
-        date,
+
+  private async getOrCreateUsageEntry(ipAddress: string): Promise<TokenUsageEntry> {
+    const today = new Date().toISOString().split('T')[0];
+    const cacheKey = `${ipAddress}:${today}`;
+    let entry = this.cache.get(cacheKey);
+    
+    if (!entry || entry.date !== today) {
+      // Create new entry for today
+      entry = {
+        ipAddress,
+        date: today,
         tokensUsed: 0,
         requestCount: 0,
         lastUpdated: Date.now()
       };
-    }
-  }
-
-  private async saveUsageToDatabase(entry: TokenUsageEntry): Promise<void> {
-    try {
-      const supabase = await createClient();
-      
-      const { error } = await supabase
-        .from('user_token_usage')
-        .upsert({
-          user_id: entry.userId,
-          usage_date: entry.date,
-          tokens_used: entry.tokensUsed,
-          request_count: entry.requestCount,
-          updated_at: new Date().toISOString()
-        }, {
-          onConflict: 'user_id,usage_date'
-        });
-
-      if (error) {
-        console.error('Error saving token usage:', error);
-      }
-    } catch (error) {
-      console.error('Error saving usage to database:', error);
-    }
-  }
-
-  private async getOrCreateUsageEntry(userId: string): Promise<TokenUsageEntry> {
-    const today = this.getTodayString();
-    const cacheKey = `${userId}:${today}`;
-    
-    let entry = this.cache.get(cacheKey);
-    
-    if (!entry || entry.date !== today) {
-      // Load from database or create new entry
-      entry = await this.loadUsageFromDatabase(userId, today);
-      if (!entry) {
-        entry = {
-          userId,
-          date: today,
-          tokensUsed: 0,
-          requestCount: 0,
-          lastUpdated: Date.now()
-        };
-      }
       this.cache.set(cacheKey, entry);
     }
     
@@ -173,23 +108,8 @@ class TokenRateLimiter {
   }
 
   async checkLimit(req: Request, estimatedTokens: number = 0): Promise<TokenRateLimitResult> {
-    const userId = await this.getUserIdFromRequest(req);
-    
-    if (!userId) {
-      // For unauthenticated users, fall back to IP-based limiting
-      return {
-        allowed: false,
-        tokensUsed: 0,
-        tokensRemaining: 0,
-        requestsUsed: 0,
-        requestsRemaining: 0,
-        resetTime: this.getResetTime(),
-        warningTriggered: false,
-        message: 'Authentication required for API access'
-      };
-    }
-
-    const entry = await this.getOrCreateUsageEntry(userId);
+    const ipAddress = this.getIpFromRequest(req);
+    const entry = await this.getOrCreateUsageEntry(ipAddress);
     const resetTime = this.getResetTime();
     
     // Check if adding estimated tokens would exceed limits
@@ -230,13 +150,8 @@ class TokenRateLimiter {
   }
 
   async recordUsage(req: Request, tokensUsed: number): Promise<void> {
-    const userId = await this.getUserIdFromRequest(req);
-    
-    if (!userId) {
-      return; // Can't record usage for unauthenticated users
-    }
-
-    const entry = await this.getOrCreateUsageEntry(userId);
+    const ipAddress = this.getIpFromRequest(req);
+    const entry = await this.getOrCreateUsageEntry(ipAddress);
     
     // Update usage
     entry.tokensUsed += tokensUsed;
@@ -245,23 +160,15 @@ class TokenRateLimiter {
     
     // Update cache
     const today = this.getTodayString();
-    const cacheKey = `${userId}:${today}`;
+    const cacheKey = `${ipAddress}:${today}`;
     this.cache.set(cacheKey, entry);
     
-    // Save to database (async, don't wait)
-    this.saveUsageToDatabase(entry).catch(error => {
-      console.error('Failed to save token usage to database:', error);
-    });
+    // Usage is now stored in memory only
   }
 
   async getUserUsage(req: Request): Promise<TokenRateLimitResult | null> {
-    const userId = await this.getUserIdFromRequest(req);
-    
-    if (!userId) {
-      return null;
-    }
-
-    const entry = await this.getOrCreateUsageEntry(userId);
+    const ipAddress = this.getIpFromRequest(req);
+    const entry = await this.getOrCreateUsageEntry(ipAddress);
     const resetTime = this.getResetTime();
     
     const tokensRemaining = Math.max(0, this.config.dailyTokenLimit - entry.tokensUsed);

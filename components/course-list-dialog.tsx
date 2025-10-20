@@ -1,14 +1,24 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { PlusIcon } from "lucide-react";
+import { PlusIcon, Trash2 } from "lucide-react";
 import { useCourseStore } from "@/stores/courseStore";
 import { useTimetableStore } from "@/stores/timetableStore";
 import { createCourseForCurrentTimetable } from "@/lib/course-timetable-helpers";
@@ -18,8 +28,14 @@ import moment from "moment";
 const DAYS_OF_WEEK = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 
 export default function CourseListDialog({ isOpen, onClose, courseId }: any) {
-  const { courses, updateCourse } = useCourseStore();
+  const { courses: allCourses, updateCourse, deleteCourse } = useCourseStore();
   const { activeTimetableId } = useTimetableStore();
+  
+  // Filter courses for the current timetable using useMemo to prevent unnecessary re-renders
+  const courses = useMemo(() => 
+    allCourses.filter((course: any) => course.timetable_id === activeTimetableId),
+    [allCourses, activeTimetableId]
+  );
   const [isCourseDialogOpen, setIsCourseDialogOpen] = useState(false);
   const [selectedCourseIndex, setSelectedCourseIndex] = useState<number | null>(
     null
@@ -33,6 +49,8 @@ export default function CourseListDialog({ isOpen, onClose, courseId }: any) {
     color: "",
   });
   const [isEditMode, setIsEditMode] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [courseToDelete, setCourseToDelete] = useState<any>(null);
 
   const handleInputChange = (field: any, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -131,6 +149,28 @@ export default function CourseListDialog({ isOpen, onClose, courseId }: any) {
     setIsEditMode(true);
   };
 
+  const handleDeleteClick = (course: any, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent triggering the course click
+    setCourseToDelete(course);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (courseToDelete && activeTimetableId) {
+      deleteCourse(activeTimetableId, courseToDelete.code);
+      toast.success(`Successfully deleted ${courseToDelete.code} - ${courseToDelete.name}!`);
+      setDeleteDialogOpen(false);
+      setCourseToDelete(null);
+      // Close the dialog after deletion
+      onClose();
+    }
+  };
+
+  const cancelDelete = () => {
+    setDeleteDialogOpen(false);
+    setCourseToDelete(null);
+  };
+
   useEffect(() => {
     if (courseId) {
       const course = courses.find((course: any) => course.id === courseId);
@@ -146,16 +186,20 @@ export default function CourseListDialog({ isOpen, onClose, courseId }: any) {
         });
       }
     } else {
-      resetForm();
+      // Reset form data without calling resetForm to avoid infinite loop
+      setFormData({ code: "", name: "", color: "#3b82f6", sessions: [] });
+      setSelectedCourseIndex(null);
+      setIsEditMode(false);
     }
   }, [courseId, courses]);
 
   return (
+    <>
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[600px] max-h-[80vh] h-full flex flex-col">
         <DialogHeader className="pb-2">
           <DialogTitle className="text-base font-semibold">
-            {courseId ? "Edit Course" : "Add Course"}
+            {isEditMode ? "Edit Course" : "Edit Subject"}
           </DialogTitle>
         </DialogHeader>
 
@@ -166,6 +210,7 @@ export default function CourseListDialog({ isOpen, onClose, courseId }: any) {
                 key={course.id}
                 variant="outline"
                 onClick={() => handleCourseClick(index)}
+                className="w-full justify-start"
               >
                 {course.code} - {course.name}
               </Button>
@@ -345,27 +390,77 @@ export default function CourseListDialog({ isOpen, onClose, courseId }: any) {
           </div>
 
           <div className="shrink-0 pt-4 mt-4 border-t">
-            <div className="flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 text-xs"
-                onClick={() => {
-                  resetForm();
-                  onClose();
-                }}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" size="sm" className="h-8 text-xs">
-                Save Changes
-              </Button>
+            <div className="flex justify-between gap-2">
+              <div className="flex gap-2">
+                {isEditMode && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      // Use the current form data to create a course object for deletion
+                      const currentCourse = {
+                        id: courseId,
+                        code: formData.code,
+                        name: formData.name,
+                        timetable_id: activeTimetableId
+                      };
+                      if (currentCourse.code && activeTimetableId) {
+                        handleDeleteClick(currentCourse, e);
+                      }
+                    }}
+                  >
+                    <Trash2 className="h-3 w-3 mr-1" />
+                    Delete
+                  </Button>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => {
+                    resetForm();
+                    onClose();
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" size="sm" className="h-8 text-xs">
+                  Save Changes
+                </Button>
+              </div>
             </div>
           </div>
         </form>
         )}
       </DialogContent>
     </Dialog>
+
+    <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete Course</AlertDialogTitle>
+          <AlertDialogDescription>
+            Are you sure you want to delete "{courseToDelete?.code} - {courseToDelete?.name}"? 
+            This action cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={cancelDelete}>Cancel</AlertDialogCancel>
+          <AlertDialogAction 
+            onClick={confirmDelete}
+            className="bg-red-600 hover:bg-red-700"
+          >
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  </>
   );
 }

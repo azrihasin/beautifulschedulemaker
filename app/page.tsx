@@ -644,14 +644,6 @@ export default function Home() {
                             </button>
 
                             <button
-                              onClick={() => setIsDialogOpen(true)}
-                              className="flex items-center text-primary text-sm font-medium rounded-2xl px-3 py-2 border border-input-border hover:bg-input-hover cursor-pointer transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-ring bg-white"
-                            >
-                              🗑️
-                              <span>Delete Subject</span>
-                            </button>
-
-                            <button
                               onClick={() => setIsJsonDialogOpen(true)}
                               className="flex items-center text-primary text-sm font-medium rounded-2xl px-3 py-2 border border-input-border hover:bg-input-hover cursor-pointer transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-ring bg-white"
                             >
@@ -706,17 +698,6 @@ export default function Home() {
                               📋
                               <span className="font-geist">Copy</span>
                             </button>
-
-                            <button
-                              onClick={() => handleAiStream()}
-                              disabled={isAiStreaming}
-                              className="flex items-center text-primary text-sm font-medium rounded-2xl px-3 py-2 border border-input-border hover:bg-input-hover cursor-pointer transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-ring bg-white disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                              🤖
-                              <span className="font-geist">
-                                {isAiStreaming ? "Streaming..." : "Test AI"}
-                              </span>
-                            </button>
                           </div>
                         </div>
                       </div>
@@ -741,7 +722,7 @@ export default function Home() {
               )}
 
               {settingsMode && (
-                <div className="flex flex-col items-end justify-center flex-1">
+                <div className="flex flex-col items-center justify-center flex-1">
                   <div className="flex flex-col items-center justify-center w-2xl pr-4">
                     <div className="w-full space-y-6">
                       <div className="w-full flex justify-start">

@@ -1,8 +1,10 @@
 import { create } from "zustand";
 import { v4 as uuidv4 } from "uuid";
 import { CourseSession, CourseWithSessions } from "./types";
-import type { CourseWithSessionsInput } from "../lib/supabase/database.types";
 import { persist, createPersistConfig } from "../lib/zustand-indexeddb-persistence";
+
+// Local type definition for course input
+type CourseWithSessionsInput = Omit<CourseWithSessions, 'id' | 'createdAt' | 'updatedAt'>;
 
 interface CourseStore {
   courses: CourseWithSessions[];

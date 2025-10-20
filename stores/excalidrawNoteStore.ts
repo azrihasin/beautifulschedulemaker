@@ -1,14 +1,16 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import { 
-  loadUserNotes, 
-  loadNoteById, 
-  saveNote, 
-  deleteNote as deleteNoteFromDB,
-  searchNotes
-} from "@/lib/supabase/excalidraw-notes";
 import { NoteCard } from "@/lib/types/three-view-notes";
-import { ExcalidrawNote } from "@/lib/supabase/database.types";
+
+// Local type definition for Excalidraw notes
+interface ExcalidrawNote {
+  id: string;
+  title: string;
+  scene_data: any;
+  created_at: string;
+  updated_at: string;
+  user_id: string;
+}
 
 // Check if we're in a browser environment
 const isBrowser = typeof window !== 'undefined';
@@ -16,6 +18,7 @@ const isBrowser = typeof window !== 'undefined';
 interface ExcalidrawNoteStore {
   // State
   notes: NoteCard[];
+  excalidrawNotes: ExcalidrawNote[]; // Store actual notes separately
   currentNote: ExcalidrawNote | null;
   isLoading: boolean;
   error: string | null;
@@ -71,6 +74,7 @@ export const useExcalidrawNoteStore = create<ExcalidrawNoteStore>()(
   isBrowser ? persist(
     (set, get) => ({
       notes: [],
+      excalidrawNotes: [],
       currentNote: null,
       isLoading: false,
       error: null,
@@ -82,12 +86,17 @@ export const useExcalidrawNoteStore = create<ExcalidrawNoteStore>()(
       loadNotes: async (): Promise<void> => {
         set({ isLoading: true, error: null });
         try {
-          const { data, error } = await loadUserNotes();
-          if (error) {
-            set({ error, isLoading: false });
-            return;
-          }
-          set({ notes: data || [], isLoading: false });
+          // For local storage, notes are already loaded from persistence
+          // Just convert stored excalidrawNotes to NoteCard format
+          const { excalidrawNotes } = get();
+          const noteCards: NoteCard[] = excalidrawNotes.map(note => ({
+            id: note.id,
+            title: note.title,
+            preview: note.title, // Use title as preview
+            lastModified: new Date(note.updated_at),
+            tags: []
+          }));
+          set({ notes: noteCards, isLoading: false });
         } catch (err) {
           const errorMessage = err instanceof Error ? err.message : 'Failed to load notes';
           set({ error: errorMessage, isLoading: false });
@@ -97,12 +106,13 @@ export const useExcalidrawNoteStore = create<ExcalidrawNoteStore>()(
       loadNote: async (noteId: string): Promise<void> => {
         set({ isLoading: true, error: null });
         try {
-          const { data, error } = await loadNoteById(noteId);
-          if (error) {
-            set({ error, isLoading: false });
+          const { excalidrawNotes } = get();
+          const note = excalidrawNotes.find(n => n.id === noteId);
+          if (!note) {
+            set({ error: 'Note not found', isLoading: false });
             return;
           }
-          set({ currentNote: data, isLoading: false });
+          set({ currentNote: note, isLoading: false });
         } catch (err) {
           const errorMessage = err instanceof Error ? err.message : 'Failed to load note';
           set({ error: errorMessage, isLoading: false });
@@ -112,16 +122,28 @@ export const useExcalidrawNoteStore = create<ExcalidrawNoteStore>()(
       createNote: async (title: string, sceneData: any): Promise<string | null> => {
         set({ isLoading: true, error: null });
         try {
-          const { data, error } = await saveNote(null, title, sceneData);
-          if (error) {
-            set({ error, isLoading: false });
-            return null;
-          }
+          const now = new Date().toISOString();
+          const newNote: ExcalidrawNote = {
+            id: `excalidraw_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            title,
+            scene_data: sceneData,
+            created_at: now,
+            updated_at: now,
+            user_id: 'local_user'
+          };
           
-          // Refresh notes list
+          const { excalidrawNotes } = get();
+          const updatedNotes = [...excalidrawNotes, newNote];
+          
+          set({ 
+            excalidrawNotes: updatedNotes,
+            currentNote: newNote,
+            isLoading: false 
+          });
+          
+          // Update notes list
           await get().loadNotes();
-          set({ currentNote: data, isLoading: false });
-          return data?.id || null;
+          return newNote.id;
         } catch (err) {
           const errorMessage = err instanceof Error ? err.message : 'Failed to create note';
           set({ error: errorMessage, isLoading: false });
@@ -132,16 +154,33 @@ export const useExcalidrawNoteStore = create<ExcalidrawNoteStore>()(
       updateNote: async (noteId: string, title: string, sceneData: any): Promise<ExcalidrawNote | null> => {
         set({ isLoading: true, error: null });
         try {
-          const { data, error } = await saveNote(noteId, title, sceneData);
-          if (error) {
-            set({ error, isLoading: false });
+          const { excalidrawNotes } = get();
+          const noteIndex = excalidrawNotes.findIndex(n => n.id === noteId);
+          
+          if (noteIndex === -1) {
+            set({ error: 'Note not found', isLoading: false });
             return null;
           }
           
-          // Refresh notes list
+          const updatedNote: ExcalidrawNote = {
+            ...excalidrawNotes[noteIndex],
+            title,
+            scene_data: sceneData,
+            updated_at: new Date().toISOString()
+          };
+          
+          const updatedNotes = [...excalidrawNotes];
+          updatedNotes[noteIndex] = updatedNote;
+          
+          set({ 
+            excalidrawNotes: updatedNotes,
+            currentNote: updatedNote,
+            isLoading: false 
+          });
+          
+          // Update notes list
           await get().loadNotes();
-          set({ currentNote: data, isLoading: false });
-          return data;
+          return updatedNote;
         } catch (err) {
           const errorMessage = err instanceof Error ? err.message : 'Failed to update note';
           set({ error: errorMessage, isLoading: false });
@@ -152,25 +191,22 @@ export const useExcalidrawNoteStore = create<ExcalidrawNoteStore>()(
       deleteNote: async (noteId: string): Promise<void> => {
         set({ isLoading: true, error: null });
         try {
-          const { error } = await deleteNoteFromDB(noteId);
-          if (error) {
-            set({ error, isLoading: false });
-            return;
-          }
+          const { excalidrawNotes, currentNote } = get();
           
-          // Remove from local state
-          const currentNotes = get().notes;
-          const updatedNotes = currentNotes.filter(note => note.id !== noteId);
+          // Remove from excalidraw notes
+          const updatedExcalidrawNotes = excalidrawNotes.filter(note => note.id !== noteId);
           
           // Clear current note if it was deleted
-          const currentNote = get().currentNote;
           const newCurrentNote = currentNote?.id === noteId ? null : currentNote;
           
           set({ 
-            notes: updatedNotes, 
+            excalidrawNotes: updatedExcalidrawNotes,
             currentNote: newCurrentNote,
             isLoading: false 
           });
+          
+          // Update notes list
+          await get().loadNotes();
         } catch (err) {
           const errorMessage = err instanceof Error ? err.message : 'Failed to delete note';
           set({ error: errorMessage, isLoading: false });
@@ -180,12 +216,24 @@ export const useExcalidrawNoteStore = create<ExcalidrawNoteStore>()(
       searchNotes: async (query: string): Promise<void> => {
         set({ isLoading: true, error: null });
         try {
-          const { data, error } = await searchNotes(query);
-          if (error) {
-            set({ error, isLoading: false });
-            return;
-          }
-          set({ notes: data || [], isLoading: false });
+          const { excalidrawNotes } = get();
+          
+          // Simple text search in local notes
+          const filteredNotes = excalidrawNotes.filter(note => {
+            const searchText = `${note.title} ${JSON.stringify(note.scene_data)}`.toLowerCase();
+            return searchText.includes(query.toLowerCase());
+          });
+          
+          // Convert to NoteCard format
+          const noteCards: NoteCard[] = filteredNotes.map(note => ({
+            id: note.id,
+            title: note.title,
+            preview: note.title,
+            lastModified: new Date(note.updated_at),
+            tags: []
+          }));
+          
+          set({ notes: noteCards, isLoading: false });
         } catch (err) {
           const errorMessage = err instanceof Error ? err.message : 'Failed to search notes';
           set({ error: errorMessage, isLoading: false });
@@ -222,11 +270,13 @@ export const useExcalidrawNoteStore = create<ExcalidrawNoteStore>()(
       })),
       partialize: (state) => ({
         notes: state.notes,
+        excalidrawNotes: state.excalidrawNotes,
         currentNote: state.currentNote,
       }),
     }
   ) : (set, get) => ({
     notes: [],
+    excalidrawNotes: [],
     currentNote: null,
     isLoading: false,
     error: null,
