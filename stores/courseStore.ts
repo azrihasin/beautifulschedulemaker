@@ -44,7 +44,7 @@ export const useCourseStore = create<CourseStore>()(
       },
 
       addCourse: (timetableId: string, course: CourseWithSessionsInput): CourseWithSessions => {
-        set({ isLoading: true, error: null });
+        set({ error: null });
         
         const courseWithSessionIds = {
           ...course,
@@ -57,8 +57,7 @@ export const useCourseStore = create<CourseStore>()(
 
         const newCourse = createCourse(courseWithSessionIds);
         set((state) => ({ 
-          courses: [...state.courses, newCourse],
-          isLoading: false 
+          courses: [...state.courses, newCourse]
         }));
 
         return newCourse;
@@ -96,15 +95,14 @@ export const useCourseStore = create<CourseStore>()(
       },
 
       updateCourse: (timetableId: string, courseId: string, updates: Partial<CourseWithSessions>): void => {
-        set({ isLoading: true, error: null });
+        set({ error: null });
         
         set((state) => ({
           courses: state.courses.map((course) =>
             course.code === courseId && course.timetable_id === timetableId
               ? { ...course, ...updates, updatedAt: new Date() }
               : course
-          ),
-          isLoading: false
+          )
         }));
       },
 
@@ -113,14 +111,12 @@ export const useCourseStore = create<CourseStore>()(
           courses: state.courses.filter((course) => 
             !(course.code === courseCode && course.timetable_id === timetableId)
           ),
-          isLoading: false,
           error: null
         }));
       },
 
       resetCourses: (): void => {
-        set({ isLoading: true, error: null });
-        set({ courses: [], isLoading: false });
+        set({ courses: [], error: null });
       },
     }),
     createPersistConfig("courses", {

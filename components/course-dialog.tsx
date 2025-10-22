@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -8,7 +8,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { PlusIcon } from "lucide-react";
+import { PlusIcon, Loader2, Trash2 } from "lucide-react";
 import { useCourseStore } from "@/stores/courseStore";
 import { useTimetableStore } from "@/stores/timetableStore";
 import { createCourseForCurrentTimetable } from "@/lib/course-timetable-helpers";
@@ -18,19 +18,29 @@ import moment from "moment";
 const DAYS_OF_WEEK = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 
 export default function CourseDialog({ isOpen, onClose, courseId }: any) {
-  const { courses, updateCourse } = useCourseStore();
+  const { courses, updateCourse, deleteCourse } = useCourseStore();
   const { activeTimetableId } = useTimetableStore();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [formData, setFormData] = useState({
     code: "",
     name: "",
     sessions: [
       { days: [], startTime: "08:00", endTime: "09:00", location: "" },
     ],
-    color: "",
+    color: "#3b82f6",
   });
 
   const handleInputChange = (field: any, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
+    // Clear form error for this field when user starts typing
+    if (formErrors[field]) {
+      setFormErrors((prev: any) => {
+        const newErrors = { ...prev };
+        delete newErrors[field];
+        return newErrors;
+      });
+    }
   };
 
   const handleSessionChange = (index: any, field: any, value: any) => {
@@ -40,6 +50,25 @@ export default function CourseDialog({ isOpen, onClose, courseId }: any) {
         i === index ? { ...session, [field]: value } : session
       ),
     }));
+    
+    // Clear session-specific errors when user makes changes
+    const errorKey = `session_${index}_${field}`;
+    if (formErrors[errorKey]) {
+      setFormErrors((prev: any) => {
+        const newErrors = { ...prev };
+        delete newErrors[errorKey];
+        return newErrors;
+      });
+    }
+    
+    // Clear time errors for this session if they exist
+    if (timeErrors[index] && (field === 'startTime' || field === 'endTime')) {
+      setTimeErrors((prev: any) => {
+        const newErrors = { ...prev };
+        delete newErrors[index];
+        return newErrors;
+      });
+    }
   };
 
   const addSession = () => {
@@ -66,56 +95,122 @@ export default function CourseDialog({ isOpen, onClose, courseId }: any) {
       sessions: [
         { days: [], startTime: "08:00", endTime: "09:00", location: "" },
       ],
-      color: "",
+      color: "#3b82f6",
     });
+    setTimeErrors({});
+    setFormErrors({});
   };
 
   const [timeErrors, setTimeErrors]: any = useState({});
+  const [formErrors, setFormErrors]: any = useState({});
 
-  const handleSubmit = async (e: any) => {
-    e.preventDefault();
+  const validateForm = useMemo(() => {
+    return () => {
+      const timeErrors: any = {};
+      const formErrors: any = {};
+      let hasError = false;
 
-    const errors: any = {};
-    let hasError = false;
-
-    formData.sessions.forEach((s: any, i: number) => {
-      if (!moment(s.startTime, "HH:mm").isBefore(moment(s.endTime, "HH:mm"))) {
-        errors[i] = "Start time must be before end time.";
+      if (!formData.code.trim()) {
+        formErrors.code = "Course code is required";
         hasError = true;
       }
-    });
 
-    setTimeErrors(errors);
+      if (!formData.name.trim()) {
+        formErrors.name = "Course name is required";
+        hasError = true;
+      }
+
+      formData.sessions.forEach((session: any, i: number) => {
+        if (!session.days || session.days.length === 0) {
+          formErrors[`session_${i}_days`] = "At least one day must be selected";
+          hasError = true;
+        }
+
+        if (!session.startTime) {
+          formErrors[`session_${i}_startTime`] = "Start time is required";
+          hasError = true;
+        }
+
+        if (!session.endTime) {
+          formErrors[`session_${i}_endTime`] = "End time is required";
+          hasError = true;
+        }
+
+        if (session.startTime && session.endTime) {
+          if (!moment(session.startTime, "HH:mm").isBefore(moment(session.endTime, "HH:mm"))) {
+            timeErrors[i] = "Start time must be before end time";
+            hasError = true;
+          }
+        }
+      });
+
+      return { timeErrors, formErrors, hasError };
+    };
+  }, [formData]);
+
+  const handleSubmit = (e: any) => {
+    e.preventDefault();
+
+    const { timeErrors, formErrors, hasError } = validateForm();
+
+    setTimeErrors(timeErrors);
+    setFormErrors(formErrors);
 
     if (hasError) return;
 
-    if (courseId) {
-      if (!activeTimetableId) {
-        toast.error('No active timetable found');
-        return;
-      }
-      // Add session_id to sessions for updateCourse
-      const formDataWithSessionIds = {
-        ...formData,
-        sessions: formData.sessions.map((session: any) => ({
-          ...session,
-          session_id: session.session_id || crypto.randomUUID()
-        }))
-      };
-      updateCourse(activeTimetableId, formData.code, formDataWithSessionIds);
-      toast.success(`Successfully updated ${formData.code} - ${formData.name}!`);
-    } else {
-      try {
-        await createCourseForCurrentTimetable(formData);
+    setIsSubmitting(true);
+
+    try {
+      if (courseId) {
+        if (!activeTimetableId) {
+          toast.error('No active timetable found');
+          setIsSubmitting(false);
+          return;
+        }
+        const formDataWithSessionIds = {
+          ...formData,
+          sessions: formData.sessions.map((session: any) => ({
+            ...session,
+            session_id: session.session_id || crypto.randomUUID()
+          }))
+        };
+        updateCourse(activeTimetableId, formData.code, formDataWithSessionIds);
+        toast.success(`Successfully updated ${formData.code} - ${formData.name}!`);
+      } else {
+        createCourseForCurrentTimetable(formData as any);
         toast.success(`Successfully added ${formData.code} - ${formData.name}!`);
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Failed to add course';
-        toast.error(`Failed to add course: ${errorMessage}`);
-        return;
       }
+      
+      resetForm();
+      onClose();
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to add course';
+      toast.error(`Failed to ${courseId ? 'update' : 'add'} course: ${errorMessage}`);
+    } finally {
+      setIsSubmitting(false);
     }
-    resetForm();
-    onClose();
+  };
+
+  const handleDelete = () => {
+    if (!courseId || !activeTimetableId) {
+      toast.error('Cannot delete course: missing course or timetable information');
+      return;
+    }
+
+    try {
+      const course = courses.find((course: any) => course.id === courseId);
+      if (course) {
+        deleteCourse(activeTimetableId, course.code as any);
+        toast.success(`Successfully deleted ${course.code} - ${course.name}!`);
+        resetForm();
+        onClose();
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to delete course';
+      toast.error(`Failed to delete course: ${errorMessage}`);
+    } finally {
+      setShowDeleteConfirm(false);
+    }
   };
 
   useEffect(() => {
@@ -123,13 +218,13 @@ export default function CourseDialog({ isOpen, onClose, courseId }: any) {
       const course = courses.find((course: any) => course.id === courseId);
       if (course) {
         setFormData({
-          code: course.code,
+          code: course.code as any,
           name: course.name,
           sessions: course.sessions.map((session: any) => ({
             ...session,
             days: Array.isArray(session.days) ? session.days : []
           })),
-          color: course.color,
+          color: course.color as any,
         });
       }
     } else {
@@ -161,6 +256,11 @@ export default function CourseDialog({ isOpen, onClose, courseId }: any) {
                     className="h-8 text-sm mt-1"
                     required
                   />
+                  {formErrors.code && (
+                    <div className="text-red-500 text-xs mt-1">
+                      {formErrors.code}
+                    </div>
+                  )}
                 </div>
 
                 <div className="w-1/2 space-y-1.5">
@@ -192,6 +292,11 @@ export default function CourseDialog({ isOpen, onClose, courseId }: any) {
                   className="h-8 text-sm mt-1"
                   required
                 />
+                {formErrors.name && (
+                  <div className="text-red-500 text-xs mt-1">
+                    {formErrors.name}
+                  </div>
+                )}
               </div>
 
               <div className="space-y-3">
@@ -200,7 +305,7 @@ export default function CourseDialog({ isOpen, onClose, courseId }: any) {
                   {formData.sessions.map((session: any, index: any) => (
                     <div
                       key={index}
-                      className="p-4 space-y-2 rounded-md bg-gray-100 "
+                      className="p-4 space-y-2 rounded-md bg-gray-100"
                     >
                       <div className="space-y-2">
                         <div className="space-y-1">
@@ -232,6 +337,11 @@ export default function CourseDialog({ isOpen, onClose, courseId }: any) {
                               </div>
                             ))}
                           </div>
+                          {formErrors[`session_${index}_days`] && (
+                            <div className="text-red-500 text-xs mt-1">
+                              {formErrors[`session_${index}_days`]}
+                            </div>
+                          )}
                         </div>
 
                         <div className="grid grid-cols-2 gap-2">
@@ -249,6 +359,11 @@ export default function CourseDialog({ isOpen, onClose, courseId }: any) {
                               }
                               className="h-8 text-xs bg-white mt-1"
                             />
+                            {formErrors[`session_${index}_startTime`] && (
+                              <div className="text-red-500 text-xs mt-1">
+                                {formErrors[`session_${index}_startTime`]}
+                              </div>
+                            )}
                           </div>
                           <div className="space-y-1">
                             <Label className="text-xs">End Time</Label>
@@ -264,6 +379,11 @@ export default function CourseDialog({ isOpen, onClose, courseId }: any) {
                               }
                               className="h-8 text-xs bg-white mt-1"
                             />
+                            {formErrors[`session_${index}_endTime`] && (
+                              <div className="text-red-500 text-xs mt-1">
+                                {formErrors[`session_${index}_endTime`]}
+                              </div>
+                            )}
                           </div>
                           {timeErrors[index] && (
                             <div className="col-span-2 text-red-500 text-xs">
@@ -319,22 +439,79 @@ export default function CourseDialog({ isOpen, onClose, courseId }: any) {
           </div>
 
           <div className="shrink-0 pt-4 mt-4 border-t">
-            <div className="flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 text-xs"
-                onClick={() => {
-                  resetForm();
-                  onClose();
-                }}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" size="sm" className="h-8 text-xs">
-                Save Changes
-              </Button>
+            <div className="flex justify-between gap-2">
+              {courseId && (
+                <div className="flex gap-2">
+                  {!showDeleteConfirm ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
+                      onClick={() => setShowDeleteConfirm(true)}
+                      disabled={isSubmitting}
+                    >
+                      <Trash2 className="w-3 h-3 mr-1.5" />
+                      Delete
+                    </Button>
+                  ) : (
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs"
+                        onClick={() => setShowDeleteConfirm(false)}
+                        disabled={isSubmitting}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        className="h-8 text-xs"
+                        onClick={handleDelete}
+                        disabled={isSubmitting}
+                      >
+                        <Trash2 className="w-3 h-3 mr-1.5" />
+                        Confirm Delete
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => {
+                    resetForm();
+                    onClose();
+                    setShowDeleteConfirm(false);
+                  }}
+                  disabled={isSubmitting}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  type="submit" 
+                  size="sm" 
+                  className="h-8 text-xs"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      <span>Saving...</span>
+                    </div>
+                  ) : (
+                    courseId ? "Update Course" : "Add Course"
+                  )}
+                </Button>
+              </div>
             </div>
           </div>
         </form>

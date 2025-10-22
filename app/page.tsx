@@ -40,7 +40,7 @@ import {
 } from "@/components/ui/resizable";
 import { useExcalidrawNoteStore } from "@/stores/excalidrawNoteStore";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 import { streamText } from "@/lib/chrome-ai";
 
 const deviceModels = [
@@ -375,9 +375,7 @@ export default function Home() {
       } else {
         const newNoteId = await createNote(
           title.trim(),
-          sceneData,
-          "timetable",
-          null
+          sceneData
         );
         if (newNoteId) {
           setSelectedNoteId(newNoteId);
@@ -421,40 +419,8 @@ export default function Home() {
     }
   };
 
-
-
-  const handleAiStream = async (prompt: string = "Hello, how are you") => {
-    setIsAiStreaming(true);
-    setAiResponse("");
-
-    try {
-      const result = await streamText({
-        prompt: prompt,
-      });
-
-      for await (const chunk of result.textStream) {
-        setAiResponse((prev) => prev + chunk);
-        console.log(chunk);
-      }
-    } catch (error) {
-      console.error("Error streaming AI response:", error);
-
-      const { toast } = await import("sonner");
-      toast.error("AI streaming failed", {
-        description: "Please try again later.",
-        duration: 3000,
-      });
-    } finally {
-      setIsAiStreaming(false);
-    }
-  };
-
   const {
     activeTimetableId,
-    activeChatId,
-    chats,
-    loadTimetables,
-    refreshFromDatabase,
     isLoading,
     error,
   } = useTimetableStore();
@@ -467,17 +433,6 @@ export default function Home() {
       });
     }
   }, [activeTimetableId]);
-
-  useEffect(() => {
-    if (loadTimetables) {
-      loadTimetables().catch((error) => {
-        console.error("Failed to load timetables:", error);
-        setLoadingError(
-          error instanceof Error ? error.message : "Failed to load timetables"
-        );
-      });
-    }
-  }, [loadTimetables]);
 
   const [selectedDevice, setSelectedDevice] = useState(deviceModels[0]);
   const [containerDimensions, setContainerDimensions] = useState({
@@ -591,17 +546,6 @@ export default function Home() {
                             <p className="text-sm text-red-600">
                               {loadingError || error}
                             </p>
-                            <button
-                              onClick={() => {
-                                setLoadingError(null);
-                                loadTimetables?.().catch((err) =>
-                                  console.error(err)
-                                );
-                              }}
-                              className="mt-2 text-sm text-red-700 hover:text-red-900 underline"
-                            >
-                              Try again
-                            </button>
                           </div>
                         </div>
                       ) : (

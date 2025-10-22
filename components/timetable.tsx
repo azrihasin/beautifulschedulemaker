@@ -20,6 +20,40 @@ const Timetable = () => {
   const { activeTimetableId } = useTimetableStore();
   const courses = getCourses(activeTimetableId || "");
 
+  const [newlyAddedCourses, setNewlyAddedCourses] = useState<Set<string>>(new Set());
+  const [previousCourseCount, setPreviousCourseCount] = useState(0);
+  const [animationStagger, setAnimationStagger] = useState<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    const currentCourseCount = courses?.length || 0;
+    
+    if (currentCourseCount > previousCourseCount) {
+      const newCourseIds = new Set<string>();
+      const staggerMap = new Map<string, number>();
+      let staggerIndex = 0;
+      
+      courses?.forEach((course) => {
+        course.sessions.forEach((session) => {
+          if (!newlyAddedCourses.has(session.session_id)) {
+            newCourseIds.add(session.session_id);
+            staggerMap.set(session.session_id, staggerIndex * 50);
+            staggerIndex++;
+          }
+        });
+      });
+      
+      setNewlyAddedCourses(newCourseIds);
+      setAnimationStagger(staggerMap);
+      
+      setTimeout(() => {
+        setNewlyAddedCourses(new Set());
+        setAnimationStagger(new Map());
+      }, 800);
+    }
+    
+    setPreviousCourseCount(currentCourseCount);
+  }, [courses, previousCourseCount, newlyAddedCourses]);
+
   // Debug: Log when courses change
   useEffect(() => {
     console.log("Timetable component: courses updated", {
@@ -238,6 +272,9 @@ const Timetable = () => {
 
     if (isNaN(courseStartOffset) || isNaN(courseDuration)) return null;
 
+    const isNewlyAdded = newlyAddedCourses.has(combinedCourse.session_id);
+    const staggerDelay = animationStagger.get(combinedCourse.session_id) || 0;
+
     return (
       <div
         key={combinedCourse.session_id}
@@ -245,7 +282,11 @@ const Timetable = () => {
           setSelectedCourseIndex(combinedCourse.id);
           setIsCourseDialogOpen(true);
         }}
-        className="absolute inset-0 text-white overflow-hidden cursor-pointer transition-opacity hover:opacity-90 flex flex-col justify-center items-center text-center"
+        className={`absolute inset-0 text-white overflow-hidden cursor-pointer transition-all duration-200 ease-out hover:opacity-90 hover:scale-[1.02] flex flex-col justify-center items-center text-center ${
+          isNewlyAdded 
+            ? 'animate-[fadeInScale_0.3s_cubic-bezier(0.16,1,0.3,1)_forwards] opacity-0' 
+            : 'opacity-100'
+        }`}
         style={{
           top: `${(courseStartOffset / totalMinutes) * 100}%`,
           height: `${(courseDuration / totalMinutes) * 100}%`,
@@ -254,6 +295,7 @@ const Timetable = () => {
           }${Math.round(opacity * 2.55)
             .toString(16)
             .padStart(2, "0")}`,
+          animationDelay: isNewlyAdded ? `${staggerDelay}ms` : '0ms',
         }}
       >
         <div
