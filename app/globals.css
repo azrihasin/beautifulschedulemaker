@@ -1,6 +1,5 @@
 @import 'tailwindcss';
 @import "tw-animate-css";
-@plugin 'tailwind-scrollbar';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -504,4 +503,59 @@ opacity: 1;
   top: 0 !important;
   left: 0 !important;
   z-index: var(--zIndex-svgLayer) !important;
+}
+
+/* Custom Scrollbar Styles for Tailwind v4 */
+.scrollbar {
+  scrollbar-width: none;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 0.3s ease;
+}
+
+.scrollbar:hover {
+  scrollbar-width: thin;
+  scrollbar-color: #F8F8F8 transparent;
+}
+
+.scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.scrollbar:hover::-webkit-scrollbar {
+  opacity: 1;
+}
+
+.scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar::-webkit-scrollbar-thumb {
+  background: #F8F8F8;
+  border-radius: 4px;
+}
+
+.scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #E5E5E5;
+}
+
+.scrollbar::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.scrollbar::-webkit-scrollbar-button {
+  display: none;
+}
+
+/* Show scrollbar when actively scrolling */
+.scrollbar::-webkit-scrollbar {
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.scrollbar:hover::-webkit-scrollbar,
+.scrollbar:active::-webkit-scrollbar {
+  opacity: 1;
 }

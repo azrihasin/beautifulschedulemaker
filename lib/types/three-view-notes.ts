@@ -129,8 +129,11 @@ export interface EditorHeaderProps {
   onTitleChange: (title: string) => void;
   onBack: () => void;
   onSave: () => void;
+  onDelete?: () => void;
   isSaving: boolean;
+  isDeleting?: boolean;
   hasUnsavedChanges?: boolean;
+  canDelete?: boolean;
   className?: string;
 }
 

@@ -22,7 +22,15 @@ class IndexedDBManager {
   private db: IDBDatabase | null = null;
   private initPromise: Promise<void> | null = null;
 
+  private get isBrowser(): boolean {
+    return typeof window !== 'undefined' && typeof indexedDB !== 'undefined';
+  }
+
   async init(): Promise<void> {
+    if (!this.isBrowser) {
+      throw new Error('IndexedDB is not available');
+    }
+    
     if (this.initPromise) {
       return this.initPromise;
     }
@@ -148,6 +156,11 @@ export const persist = <T>(
     const storeApi = config(persistedSet, get, api);
 
     const hydrate = async () => {
+      if (typeof window === 'undefined') {
+        isHydrated = true;
+        return;
+      }
+      
       try {
         const persistedState = await dbManager.getItem(storeName, "state");
         if (persistedState) {
@@ -174,7 +187,12 @@ export const persist = <T>(
       }
     };
 
-    hydrate();
+    // Only hydrate on client side
+    if (typeof window !== 'undefined') {
+      hydrate();
+    } else {
+      isHydrated = true;
+    }
 
     return {
       ...storeApi,

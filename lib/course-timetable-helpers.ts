@@ -42,20 +42,29 @@ export const switchToTimetable = async (timetableId: string): Promise<void> => {
  * @param timetableName - Name for the new timetable
  * @returns Promise<string> - The ID of the created timetable
  */
-export const createNewTimetableWithCourses = async (timetableName: string): Promise<string> => {
-  const { addTimetable, setActiveTimetable } = useTimetableStore.getState();
+export const createNewTimetableWithCourses = async (timetableName?: string): Promise<string> => {
+  const { addTimetable, setActiveTimetable, updateTimetable } = useTimetableStore.getState();
   const { resetCourses } = useCourseStore.getState();
   
   // Create new timetable
-  const newTimetableId = await addTimetable(timetableName);
+  const newTimetable = addTimetable();
+  
+  // Update name if provided
+  if (timetableName) {
+    updateTimetable({
+      ...newTimetable,
+      name: timetableName,
+      updatedAt: new Date(),
+    });
+  }
   
   // Switch to the new timetable
-  setActiveTimetable(newTimetableId);
+  setActiveTimetable(newTimetable.id);
   
   // Reset courses (will be empty for new timetable)
   await resetCourses();
   
-  return newTimetableId;
+  return newTimetable.id;
 };
 
 /**

@@ -1,0 +1,80 @@
+<svg width="800" height="600" viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .box {
+        fill: #f8f9fa;
+        stroke: #333;
+        stroke-width: 2;
+        rx: 15;
+      }
+      .text {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        font-size: 16px;
+        fill: #333;
+        text-anchor: middle;
+        dominant-baseline: middle;
+      }
+      .title {
+        font-size: 20px;
+        font-weight: bold;
+      }
+      .subtitle {
+        font-size: 14px;
+        fill: #666;
+      }
+      .arrow {
+        stroke: #333;
+        stroke-width: 2;
+        fill: none;
+        marker-end: url(#arrowhead);
+      }
+      .decision-arrow {
+        stroke: #666;
+        stroke-width: 1.5;
+        fill: none;
+        marker-end: url(#arrowhead);
+      }
+      .label {
+        font-size: 12px;
+        fill: #666;
+      }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" 
+            refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333" />
+    </marker>
+  </defs>
+  
+  <!-- User prompt box -->
+  <rect x="250" y="50" width="300" height="80" class="box"/>
+  <text x="400" y="90" class="text title">User prompt</text>
+  
+  <!-- Main arrow down -->
+  <line x1="400" y1="130" x2="400" y2="180" class="arrow"/>
+  
+  <!-- Prompt API box -->
+  <rect x="200" y="200" width="400" height="120" class="box"/>
+  <text x="400" y="240" class="text title">Prompt API</text>
+  <text x="400" y="270" class="text subtitle">Prompt API decide if the user</text>
+  <text x="400" y="290" class="text subtitle">prompt need to execution</text>
+  <text x="400" y="310" class="text subtitle">function tools call or just answering</text>
+  <text x="400" y="330" class="text subtitle">user prompt</text>
+  
+  <!-- Decision arrows -->
+  <line x1="300" y1="320" x2="150" y2="420" class="decision-arrow"/>
+  <line x1="500" y1="320" x2="650" y2="420" class="decision-arrow"/>
+  
+  <!-- Decision labels -->
+  <text x="200" y="360" class="text label">If tools call</text>
+  <text x="600" y="360" class="text label">If answering user prompt</text>
+  
+  <!-- Gemini API box -->
+  <rect x="50" y="450" width="300" height="100" class="box"/>
+  <text x="200" y="485" class="text title">Gemini API</text>
+  <text x="200" y="515" class="text subtitle">Using firebase AI Logic</text>
+  
+  <!-- Prompt API (Chrome) box -->
+  <rect x="450" y="450" width="300" height="100" class="box"/>
+  <text x="600" y="485" class="text title">Prompt API</text>
+  <text x="600" y="515" class="text subtitle">Using on device chrome built in AI</text>
+</svg>

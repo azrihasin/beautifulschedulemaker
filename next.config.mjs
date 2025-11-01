@@ -10,10 +10,7 @@ const nextConfig = {
     // your project has TypeScript errors.
     ignoreBuildErrors: true,
   },
-  devIndicators: {
-    buildActivity: false,
-    // position: 'top-right'
-  },
+  devIndicators: false,
 };
 
 export default nextConfig;

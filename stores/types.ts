@@ -42,6 +42,11 @@ export interface Timetable {
   createdAt: Date;
   updatedAt: Date;
   isActive: boolean;
+  backgroundImage?: string | null;
+  backgroundSize?: number;
+  backgroundPositionX?: number;
+  backgroundPositionY?: number;
+  backgroundRotation?: number;
 }
 
 export interface ChatMessage {
@@ -77,6 +82,20 @@ export interface TimetableStore {
   getTimetable: (id: string) => Timetable | undefined;
   updateMany: (updates: Array<{ id: string; updates: Partial<Omit<Timetable, 'id' | 'createdAt' | 'courses'>> }>) => void;
   getActiveTimetableId: () => string | null;
+  
+  // Background image methods
+  setTimetableBackgroundImage: (timetableId: string, backgroundImage: string | null) => void;
+  setTimetableBackgroundSize: (timetableId: string, backgroundSize: number) => void;
+  setTimetableBackgroundPositionX: (timetableId: string, backgroundPositionX: number) => void;
+  setTimetableBackgroundPositionY: (timetableId: string, backgroundPositionY: number) => void;
+  setTimetableBackgroundRotation: (timetableId: string, backgroundRotation: number) => void;
+  getActiveTimetableBackground: () => {
+    backgroundImage: string | null;
+    backgroundSize: number;
+    backgroundPositionX: number;
+    backgroundPositionY: number;
+    backgroundRotation: number;
+  } | null;
 }
 
 // Chat Store Interface (simplified CRUD operations)
@@ -150,12 +169,12 @@ export interface NoteStore {
   getCurrentNote: () => Note | null;
   
   // Organization features
-  getOrganizedNotes: (timetableId: string) => {
+  getOrganizedNotes: (timetableId: string) => Promise<{
     timetable: Note[];
     course: Note[];
     session: Note[];
-  };
-  getPinnedNotes: (timetableId: string) => Note[];
+  }>;
+  getPinnedNotes: (timetableId: string) => Promise<Note[]>;
   togglePin: (noteId: string) => Promise<void>;
   
   // AI integration
