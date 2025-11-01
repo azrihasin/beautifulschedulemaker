@@ -1,32 +1,18 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import {
-  UIMessage,
-  DefaultChatTransport,
-  convertToModelMessages,
-  streamText,
-} from "ai";
-import { ClientSideChatTransport } from "../utils/client-side-chat-transport";
-import { useChat } from "@ai-sdk/react";
-import {
-  builtInAI,
-  BuiltInAIUIMessage,
-  doesBrowserSupportBuiltInAI,
-} from "@built-in-ai/core";
-import { FileUIPart } from "ai";
+import { BuiltInAIUIMessage } from "@built-in-ai/core";
 import { toast } from "sonner";
 import { v4 as uuidv4 } from "uuid";
 import { useTimetableStore } from "@/stores/timetableStore";
 import { useCourseStore } from "@/stores/courseStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import {
   ArrowUp,
   Square,
-  Paperclip,
-  X,
   Copy,
   RefreshCcw,
   MessageSquare,
@@ -41,11 +27,11 @@ import {
   PromptInputAction,
 } from "@/components/ui/prompt-input";
 import { ChatContainerContent, ChatContainerRoot } from "./ui/chat-container";
-import { ScrollButton } from "./ui/scroll-button";
-import { Message, MessageAvatar, MessageContent } from "./ui/message";
+import { Message, MessageAvatar, MessageContent, MessageActions, MessageAction } from "./ui/message";
 import { Markdown } from "./ui/markdown";
 import { Loader } from "./ui/loader";
 import { PromptSuggestion } from "./ui/prompt-suggestion";
+
 import { Tool, type ToolPart } from "@/components/ui/tool";
 import {
   Dialog,
@@ -68,885 +54,25 @@ import {
 
 import { useChatStore } from "@/stores/chatStore";
 
-interface ChatbotProps {
-  className?: string;
-}
+import {
+  FunctionDeclarationsTool,
+  getAI,
+  getGenerativeModel,
+  InferenceMode,
+  Schema,
+} from "firebase/ai";
+import { db, firebaseApp } from "@/lib/firebase";
+
+export function Chatbot({ className }: any) {
 
-interface ToolResult {
-  type: "tool-result";
-  toolCallId: string;
-  toolName: string;
-  output: {
-    functionCall: string;
-    arguments: any[];
-  };
-}
-
-const executeToolFunction = (
-  toolResult: ToolResult,
-  activeTimetableId: any,
-  timetableActions: any,
-  courseActions: any
-) => {
-  const { toolName, output } = toolResult;
-  const { functionCall, arguments: args } = output;
-
-  try {
-    switch (functionCall) {
-      case "addCourse":
-        const [timetableId, courseData] = args;
-        const finalTimetableId = timetableId && timetableId !== "undefined" && timetableId !== "null" 
-          ? timetableId 
-          : activeTimetableId;
-        timetableActions.addCourse(finalTimetableId, courseData);
-        break;
-
-      case "deleteCourse":
-        const [delTimetableId, courseId] = args;
-        const finalDelTimetableId = delTimetableId && delTimetableId !== "undefined" && delTimetableId !== "null" 
-          ? delTimetableId 
-          : activeTimetableId;
-        timetableActions.deleteCourse(finalDelTimetableId, courseId);
-        break;
-
-      case "getCourses":
-        const [getTimetableId] = args;
-        const finalGetTimetableId = getTimetableId && getTimetableId !== "undefined" && getTimetableId !== "null" 
-          ? getTimetableId 
-          : activeTimetableId;
-        const courses = timetableActions.getCourses(finalGetTimetableId);
-        console.log("Courses:", courses);
-        break;
-
-      case "getTimetableActiveId":
-        const activeId = timetableActions.getActiveTimetableId();
-        console.log("Active Timetable ID:", activeId);
-        if (activeId) {
-          toast.success(`Active Timetable ID: ${activeId}`);
-        } else {
-          toast.error("No active timetable found");
-        }
-        break;
-
-      case "addCoursesBulk":
-        const [bulkTimetableId, coursesArray] = args;
-        const finalBulkTimetableId = bulkTimetableId && bulkTimetableId !== "undefined" && bulkTimetableId !== "null" 
-          ? bulkTimetableId 
-          : activeTimetableId;
-        timetableActions.addCoursesBulk(finalBulkTimetableId, coursesArray);
-        break;
-
-      case "updateCourse":
-        const [updateTimetableId, updateCourseId, updates] = args;
-        const finalUpdateTimetableId = updateTimetableId && updateTimetableId !== "undefined" && updateTimetableId !== "null" 
-          ? updateTimetableId 
-          : activeTimetableId;
-        timetableActions.updateCourse(finalUpdateTimetableId, updateCourseId, updates);
-        break;
-
-      case "resetCourses":
-        timetableActions.resetCourses();
-        break;
-
-      case "addTimetable":
-        timetableActions.addTimetable();
-        break;
-
-      case "setActiveTimetable":
-        const [setActiveTimetableId] = args;
-        timetableActions.setActiveTimetable(setActiveTimetableId);
-        break;
-
-      case "updateTimetable":
-        const [updatedTimetable] = args;
-        timetableActions.updateTimetable(updatedTimetable);
-        break;
-
-      case "getTimetable":
-        const [getTimetableById] = args;
-        const timetable = timetableActions.getTimetable(getTimetableById);
-        console.log("Timetable:", timetable);
-        break;
-
-      default:
-        console.warn(`Unknown tool function: ${functionCall}`);
-    }
-  } catch (error: any) {
-    console.error(`Error executing ${functionCall}:`, error);
-    toast.error(`Error executing ${functionCall}: ${error.message}`);
-  }
-};
-
-const parseToolResult = (messageContent: string): ToolResult | null => {
-  try {
-    let trimmed = messageContent.trim();
-    
-    if (trimmed.startsWith("```json") && trimmed.endsWith("```")) {
-      trimmed = trimmed.slice(7, -3).trim();
-    } else if (trimmed.startsWith("```") && trimmed.endsWith("```")) {
-      const firstNewline = trimmed.indexOf('\n');
-      if (firstNewline !== -1) {
-        trimmed = trimmed.slice(firstNewline + 1, -3).trim();
-      }
-    }
-    
-    if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-      const parsed = JSON.parse(trimmed);
-      if (parsed.type === "tool-result" && parsed.toolName && parsed.output) {
-        return parsed as ToolResult;
-      }
-    }
-    return null;
-  } catch (error) {
-    console.error("Error parsing tool result:", error);
-    return null;
-  }
-};
-
-const customFetch =
-  () => async (_input: RequestInfo | URL, init?: RequestInit) => {
-    const m = JSON.parse(init?.body as string);
-    console.log(init);
-    console.log("context info");
-    console.log(m.activeTimetableId);
-    console.log(m.courses);
-
-    const currentTimetableId = m.activeTimetableId;
-    const courses = m.courses;
-    const result = streamText({
-      model: builtInAI(),
-      messages: convertToModelMessages(m.messages),
-      maxOutputTokens: 4096,
-//       system: `SYSTEM: Intelligent Timetable Assistant with Dynamic Function Calling
-
-// You are an intelligent assistant that helps users manage their course timetables. You have access to timetable management functions, but you should ONLY call them when actually necessary based on the user's intent.
-
-// CRITICAL: WHEN TO RESPOND VS WHEN TO CALL FUNCTIONS
-
-// DEFAULT BEHAVIOR: Respond conversationally in natural language
-// ONLY use function calls when the user EXPLICITLY requests data operations
-
-// RESPOND CONVERSATIONALLY (DO NOT CALL FUNCTIONS) When:
-// - User greets you (hi, hello, hey, etc.)
-// - User asks general questions about timetables or scheduling
-// - User asks for advice or recommendations
-// - User asks about features or capabilities
-// - User makes casual conversation
-// - User asks "what if" or hypothetical questions
-// - User asks for explanations or how things work
-// - User's message is ambiguous or unclear
-// - This is the FIRST message in a conversation (unless it's clearly a command)
-// - User asks about YOU or your capabilities
-
-// CALL FUNCTIONS ONLY When user EXPLICITLY requests:
-// - "Add [course name]..." - Use addCourse
-// - "Delete [course]..." - Use deleteCourse
-// - "Update/change [course]..." - Use updateCourse
-// - "Show my courses" or "What courses do I have?" - Use getCourses
-// - "Do I have class on [day]?" - Use getCourses
-// - "Create a new timetable" - Use addTimetable
-// - "Switch to [timetable]" - Use setActiveTimetable
-// - Any other clear data manipulation command
-
-// IMPORTANT DECISION RULES:
-// 1. If in doubt, ALWAYS respond conversationally first
-// 2. If the user hasn't mentioned specific course names, times, or days - respond conversationally
-// 3. If this is the first interaction - respond conversationally unless it's a clear command
-// 4. Only call functions when you're 100% certain the user wants to modify or retrieve data
-// 5. When responding conversationally, explain what you CAN do and ask if they'd like you to help
-
-// FUNCTION CALLING FORMAT
-
-// When you determine a function call is necessary, output EXACTLY one JSON object with NO other text:
-
-// {
-//   "type": "tool-result",
-//   "toolCallId": "call-{timestamp}-{random}",
-//   "toolName": "functionName",
-//   "output": {
-//     "functionCall": "functionName",
-//     "arguments": [arg1, arg2, ...]
-//   }
-// }
-
-// CRITICAL RULES FOR FUNCTION CALLS:
-// - Output ONLY the JSON object, nothing else
-// - No explanatory text before or after the JSON
-// - No markdown code blocks
-// - Positional arguments only (no parameter names)
-// - Strings in quotes, times in 24-hour "HH:mm" format
-// - Generate unique toolCallId for each call
-
-// CONTEXT INFORMATION
-
-// Current Active Timetable ID: ${currentTimetableId}
-// MANDATORY: Always use "${currentTimetableId}" for any timetableId parameter unless user explicitly specifies a different timetable
-
-// Current Courses:
-// ${JSON.stringify(courses, null, 2)}
-
-// IMPORTANT: courseId parameter = the "code" field from courses array (NOT "id" or "name")
-
-// FUNCTION REFERENCE (Positional Arguments)
-
-// 1. getCourses(timetableId)
-// 2. addCourse(timetableId, course)
-// 3. addCoursesBulk(timetableId, courses)
-// 4. updateCourse(timetableId, courseId, updates)
-// 5. deleteCourse(timetableId, courseId)
-// 6. resetCourses()
-// 7. addTimetable()
-// 8. setActiveTimetable(id)
-// 9. updateTimetable(updatedTimetable)
-// 10. getTimetable(id)
-// 11. updateMany(updates)
-// 12. deleteTimetable(id)
-// 13. getTimetables()
-// 14. getTimetableActiveId()
-
-// Course object structure:
-// {
-//   "name": "string",
-//   "code": "string",
-//   "color": "string",
-//   "sessions": [
-//     {
-//       "days": ["MON", "WED"],
-//       "startTime": "09:00",
-//       "endTime": "10:15",
-//       "location": "string"
-//     }
-//   ]
-// }
-
-// EXAMPLES OF CORRECT BEHAVIOR
-
-// Example 1: First interaction - RESPOND CONVERSATIONALLY
-// User: "Hi"
-// Assistant: "Hello! I'm your timetable assistant. I can help you manage your course schedule. I can add courses, show you your schedule, update class times, and more. What would you like to do?"
-
-// Example 2: General question - RESPOND CONVERSATIONALLY
-// User: "What can you do?"
-// Assistant: "I can help you manage your course timetable! Here's what I can do:
-// - Add new courses with their schedules
-// - Show you all your courses
-// - Update course details or times
-// - Delete courses
-// - Check what classes you have on specific days
-// - Manage multiple timetables
-
-// Would you like me to help you with any of these?"
-
-// Example 3: Vague request - RESPOND CONVERSATIONALLY
-// User: "I need help with my schedule"
-// Assistant: "I'd be happy to help with your schedule! What would you like to do?
-// - Add a new course?
-// - View your current courses?
-// - Change a course time?
-// - Something else?
-
-// Let me know and I'll assist you!"
-
-// Example 4: Advice question - RESPOND CONVERSATIONALLY
-// User: "Should I take morning or afternoon classes?"
-// Assistant: "That depends on your personal preferences! Here are some things to consider:
-// - Morning classes: Great if you're a morning person, leaves afternoons free
-// - Afternoon classes: Better if you're not a morning person, gives you time to prepare
-
-// Do you have specific courses you'd like to add to your timetable? I can help you organize them once you decide!"
-
-// Example 5: Clear command - CALL FUNCTION
-// User: "Add Calculus 101 on Monday and Wednesday 9-10am in room A1"
-// Assistant:
-// {
-//   "type": "tool-result",
-//   "toolCallId": "call-1729612345-abc",
-//   "toolName": "addCourse",
-//   "output": {
-//     "functionCall": "addCourse",
-//     "arguments": [
-//       "${currentTimetableId}",
-//       {
-//         "name": "Calculus 101",
-//         "code": "CALC101",
-//         "color": "#2E86AB",
-//         "sessions": [
-//           {
-//             "days": ["MON", "WED"],
-//             "startTime": "09:00",
-//             "endTime": "10:00",
-//             "location": "A1"
-//           }
-//         ]
-//       }
-//     ]
-//   }
-// }
-
-// Example 6: Data query - CALL FUNCTION
-// User: "Show me my courses"
-// Assistant:
-// {
-//   "type": "tool-result",
-//   "toolCallId": "call-1729612346-xyz",
-//   "toolName": "getCourses",
-//   "output": {
-//     "functionCall": "getCourses",
-//     "arguments": ["${currentTimetableId}"]
-//   }
-// }
-
-// Example 7: Unclear intent - RESPOND CONVERSATIONALLY
-// User: "I'm thinking about my classes"
-// Assistant: "I can help you with your classes! Are you looking to:
-// - Add new classes to your schedule?
-// - View your current schedule?
-// - Make changes to existing classes?
-// - Get advice on organizing your schedule?
-
-// Let me know what you'd like to do!"
-
-// BEHAVIORAL GUIDELINES
-
-// 1. START CONVERSATIONALLY: Always begin interactions with natural language responses
-// 2. ASK FOR CLARIFICATION: If unclear, ask questions rather than guessing
-// 3. BE HELPFUL: Explain capabilities and guide users to make clear requests
-// 4. DON'T ASSUME: Don't call functions unless explicitly requested
-// 5. NATURAL LANGUAGE FIRST: Default to conversation, not function calls
-// 6. CONFIRM WHEN NEEDED: For destructive actions (delete, reset), confirm first conversationally
-
-// REMEMBER:
-// - When in doubt, respond conversationally
-// - Only call functions when user intent is crystal clear
-// - First messages should almost always be conversational
-// - You're a helpful assistant, not an automatic function executor
-// - Ask clarifying questions if needed
-// - Guide users to make specific requests if their intent is unclear
-
-// AVAILABLE FUNCTIONS (Full Schemas)
-
-// [
-//   {
-//     "name": "getCourses",
-//     "description": "Return all courses for a given timetable.",
-//     "parameters": {
-//       "type": "object",
-//       "properties": {
-//         "timetableId": { "type": "string", "description": "The ID of the timetable to filter courses by." }
-//       },
-//       "required": ["timetableId"]
-//     }
-//   },
-//   {
-//     "name": "addCourse",
-//     "description": "Create a new course (and its sessions) under a timetable.",
-//     "parameters": {
-//       "type": "object",
-//       "properties": {
-//         "timetableId": { "type": "string" },
-//         "course": {
-//           "type": "object",
-//           "properties": {
-//             "name": { "type": "string" },
-//             "code": { "type": "string" },
-//             "color": { "type": "string" },
-//             "sessions": {
-//               "type": "array",
-//               "items": {
-//                 "type": "object",
-//                 "properties": {
-//                   "days": { "type": "array", "items": { "type": "string" } },
-//                   "startTime": { "type": "string" },
-//                   "endTime": { "type": "string" },
-//                   "location": { "type": "string" }
-//                 }
-//               }
-//             }
-//           },
-//           "required": ["sessions"]
-//         }
-//       },
-//       "required": ["timetableId", "course"]
-//     }
-//   },
-//   {
-//     "name": "addCoursesBulk",
-//     "description": "Create multiple courses in a single operation.",
-//     "parameters": {
-//       "type": "object",
-//       "properties": {
-//         "timetableId": { "type": "string" },
-//         "courses": { "type": "array" }
-//       },
-//       "required": ["timetableId", "courses"]
-//     }
-//   },
-//   {
-//     "name": "updateCourse",
-//     "description": "Update fields on an existing course.",
-//     "parameters": {
-//       "type": "object",
-//       "properties": {
-//         "timetableId": { "type": "string" },
-//         "courseId": { "type": "string" },
-//         "updates": { "type": "object" }
-//       },
-//       "required": ["timetableId", "courseId", "updates"]
-//     }
-//   },
-//   {
-//     "name": "deleteCourse",
-//     "description": "Delete a course from a timetable.",
-//     "parameters": {
-//       "type": "object",
-//       "properties": {
-//         "timetableId": { "type": "string" },
-//         "courseId": { "type": "string" }
-//       },
-//       "required": ["timetableId", "courseId"]
-//     }
-//   },
-//   {
-//     "name": "resetCourses",
-//     "description": "Remove all courses from state.",
-//     "parameters": { "type": "object", "properties": {} }
-//   },
-//   {
-//     "name": "addTimetable",
-//     "description": "Create a new timetable.",
-//     "parameters": { "type": "object", "properties": {} }
-//   },
-//   {
-//     "name": "setActiveTimetable",
-//     "description": "Set the currently active timetable by ID.",
-//     "parameters": {
-//       "type": "object",
-//       "properties": {
-//         "id": { "type": "string" }
-//       },
-//       "required": ["id"]
-//     }
-//   },
-//   {
-//     "name": "updateTimetable",
-//     "description": "Replace an existing timetable.",
-//     "parameters": {
-//       "type": "object",
-//       "properties": {
-//         "updatedTimetable": { "type": "object", "required": ["id"] }
-//       },
-//       "required": ["updatedTimetable"]
-//     }
-//   },
-//   {
-//     "name": "getTimetable",
-//     "description": "Fetch a single timetable by ID.",
-//     "parameters": {
-//       "type": "object",
-//       "properties": {
-//         "id": { "type": "string" }
-//       },
-//       "required": ["id"]
-//     }
-//   },
-//   {
-//     "name": "updateMany",
-//     "description": "Batch update many timetables.",
-//     "parameters": {
-//       "type": "object",
-//       "properties": {
-//         "updates": { "type": "array" }
-//       },
-//       "required": ["updates"]
-//     }
-//   },
-//   {
-//     "name": "deleteTimetable",
-//     "description": "Delete a timetable by ID.",
-//     "parameters": {
-//       "type": "object",
-//       "properties": {
-//         "id": { "type": "string" }
-//       },
-//       "required": ["id"]
-//     }
-//   },
-//   {
-//     "name": "getTimetables",
-//     "description": "Return all timetables.",
-//     "parameters": { "type": "object", "properties": {} }
-//   },
-//   {
-//     "name": "getTimetableActiveId",
-//     "description": "Get the ID of the currently active timetable.",
-//     "parameters": { "type": "object", "properties": {} }
-//   }
-// ]
-// `,
-      system: `SYSTEM: STRICT FUNCTION-CALLING SOP (Timetables API) — Positional-Only
-
-You have access to the functions listed at the end of this prompt. When the user asks to read or modify timetables/courses, you MUST decide to call the function call or answering user question.
-If you decide to do function call. You must follow the JSON format specified below.
-
-FORMAT (MANDATORY WHEN CALLING ANY FUNCTION)
-- Output EXACTLY one JSON object with the following structure:
-{
-  "type": "tool-result",
-  "toolCallId": "unique-id-string",
-  "toolName": "function-name",
-  "output": {
-    "functionCall": "function-name",
-    "arguments": [arg1, arg2, ...]
-  }
-}
-
-- Use positional arguments (values only) in the exact order defined in Argument Order Map below. Do not include parameter names.
-- Strings in quotes. Times use 24-hour "HH:mm". Arrays use [ ... ]. Objects use { ... }.
-- Generate a unique toolCallId for each function call (use timestamp or UUID format).
-- The message MUST contain only that single JSON object (no extra commentary/markdown outside it).
-
-Examples:
-- Single call:
-{
-  "type": "tool-result",
-  "toolCallId": "call-1234567890",
-  "toolName": "getCourses",
-  "output": {
-    "functionCall": "getCourses",
-    "arguments": ["${currentTimetableId}"]
-  }
-}
-
-- Add course:
-{
-  "type": "tool-result",
-  "toolCallId": "call-1234567891",
-  "toolName": "addCourse",
-  "output": {
-    "functionCall": "addCourse",
-    "arguments": ["${currentTimetableId}", { "name": "Calculus I", "code": "MTH101", "color": "#2E86AB", "sessions": [ { "days": ["MON", "WED"], "startTime": "09:00", "endTime": "10:15", "location": "A1" } ] }]
-  }
-}
-
-- No-arg function:
-{
-  "type": "tool-result",
-  "toolCallId": "call-1234567892",
-  "toolName": "resetCourses",
-  "output": {
-    "functionCall": "resetCourses",
-    "arguments": []
-  }
-}
-
-IMPORTANT
-- The current active timetable ID is: ${currentTimetableId}.
-- MANDATORY: When making ANY function call that requires a timetableId parameter, you MUST ALWAYS pass "${currentTimetableId}" as the timetableId value unless the user explicitly requests a different specific timetable ID.
-- CRITICAL: Never omit the timetableId parameter or use placeholder values. Always use the exact value "${currentTimetableId}" for all timetable-related operations.
-- STRICTLY FORBIDDEN: You are NOT ALLOWED to pass null, undefined, or any placeholder values for timetableId. MUST use "${currentTimetableId}".
-- Whenever a function requires a timetableId, always pass "${currentTimetableId}" unless the user explicitly requests a different timetable ID.
-- COURSE ID IDENTIFICATION: When a function requires a courseId parameter, the courseId is the "code" field from the courses array, NOT the "id" field. When users reference a course by name, you must find the corresponding "code" field and use that as the courseId parameter.
-- For addCourse, session_id values are optional; omit them to auto-generate.
-- If input is ambiguous but required fields are clear, proceed with a reasonable interpretation; do not ask for confirmation unless absolutely necessary to fulfill required fields.
-- If multiple steps are needed, make separate JSON tool result objects for each function call in logical order.
-
-CURRENT COURSES CONTEXT
-The following courses are currently available in the active timetable (${currentTimetableId}):
-${JSON.stringify(courses, null, 2)}
-
-WHEN NOT TO CALL A FUNCTION
-- If the user asks a general question that does not require reading/modifying timetables/courses, answer normally in natural language (no JSON tool result object).
-
-ARGUMENT ORDER MAP (Values-Only)
-Use exactly this positional order for each function:
-- getCourses(timetableId)
-- addCourse(timetableId, course)
-- addCoursesBulk(timetableId, courses)  // courses = array of course objects
-- updateCourse(timetableId, courseId, updates)  // courseId = course "code" field from courses array
-- deleteCourse(timetableId, courseId)  // courseId = course "code" field from courses array
-- resetCourses()
-- addTimetable()
-- setActiveTimetable(id)
-- updateTimetable(updatedTimetable)
-- getTimetable(id)
-- updateMany(updates)
-- deleteTimetable(id)
-- getTimetables()
-
-CRITICAL PARAMETER NOTES:
-- timetableId: ALWAYS use "${currentTimetableId}" - never null, undefined, or placeholders
-- courseId: Use the "code" field from the courses array, NOT the "id" field, not the course name, or any other identifier
-
-Notes on argument shapes (still positional):
-- course (for addCourse) is an object like:
-  {
-    "name": "string",
-    "code": "string",
-    "color": "string",
-    "sessions": [
-      {
-        "days": ["MON", "WED"],
-        "startTime": "HH:mm",
-        "endTime": "HH:mm",
-        "location": "string"
-      }
-    ]
-  }
-
-- updates (for updateCourse) is an object that may include "name", "code", "color", and/or "sessions" (each session may include "session_id", "days", "startTime", "endTime", "location").
-
-- updatedTimetable (for updateTimetable) is the full timetable object (must include "id"; other fields as appropriate).
-
-- updates (for updateMany) is an array of { "id", "updates" } objects.
-
-AVAILABLE FUNCTIONS (SCHEMAS)
-[
-  {
-    "name": "getCourses",
-    "description": "Return all courses for a given timetable.",
-    "parameters": {
-      "type": "object",
-      "properties": {
-        "timetableId": { "type": "string", "description": "The ID of the timetable to filter courses by." }
-      },
-      "required": ["timetableId"]
-    }
-  },
-  {
-    "name": "addCourse",
-    "description": "Create a new course (and its sessions) under a timetable. Missing session_id values will be generated.",
-    "parameters": {
-      "type": "object",
-      "properties": {
-        "timetableId": { "type": "string", "description": "The ID of the timetable to add the course to." },
-        "course": {
-          "type": "object",
-          "description": "CourseWithSessionsInput payload. Any extra fields are accepted.",
-          "properties": {
-            "id": { "type": "string", "description": "Optional client-provided course ID." },
-            "timetable_id": { "type": "string", "description": "Optional; will be overridden by timetableId." },
-            "name": { "type": "string" },
-            "code": { "type": "string" },
-            "color": { "type": "string" },
-            "sessions": {
-              "type": "array",
-              "description": "List of sessions included with the course.",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "days": { "type": "array", "items": { "type": "string" }, "description": "Array of days e.g., ['MON', 'WED']." },
-                  "startTime": { "type": "string", "description": "Start time (HH:mm)." },
-                  "endTime": { "type": "string", "description": "End time (HH:mm)." },
-                  "location": { "type": "string" }
-                },
-                "additionalProperties": true
-              },
-              "default": []
-            }
-          },
-          "required": ["sessions"],
-          "additionalProperties": true
-        }
-      },
-      "required": ["timetableId", "course"]
-    }
-  },
-  {
-    "name": "addCoursesBulk",
-    "description": "Create multiple new courses (and their sessions) under a timetable in a single operation. Missing session_id values will be generated.",
-    "parameters": {
-      "type": "object",
-      "properties": {
-        "timetableId": { "type": "string", "description": "The ID of the timetable to add the courses to." },
-        "courses": {
-          "type": "array",
-          "description": "Array of CourseWithSessionsInput payloads. Any extra fields are accepted.",
-          "items": {
-            "type": "object",
-            "properties": {
-              "id": { "type": "string", "description": "Optional client-provided course ID." },
-              "timetable_id": { "type": "string", "description": "Optional; will be overridden by timetableId." },
-              "name": { "type": "string" },
-              "code": { "type": "string" },
-              "color": { "type": "string" },
-              "sessions": {
-                "type": "array",
-                "description": "List of sessions included with the course.",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "days": { "type": "array", "items": { "type": "string" }, "description": "Array of days e.g., ['MON', 'WED']." },
-                    "startTime": { "type": "string", "description": "Start time (HH:mm)." },
-                    "endTime": { "type": "string", "description": "End time (HH:mm)." },
-                    "location": { "type": "string" }
-                  },
-                  "additionalProperties": true
-                },
-                "default": []
-              }
-            },
-            "required": ["sessions"],
-            "additionalProperties": true
-          }
-        }
-      },
-      "required": ["timetableId", "courses"]
-    }
-  },
-  {
-    "name": "updateCourse",
-    "description": "Update fields on an existing course within a timetable. Also updates updatedAt.",
-    "parameters": {
-      "type": "object",
-      "properties": {
-        "timetableId": { "type": "string", "description": "The timetable that contains the course." },
-        "courseId": { "type": "string", "description": "The course ID to update." },
-        "updates": {
-          "type": "object",
-          "description": "Partial<CourseWithSessions>. Any supplied fields will overwrite existing values.",
-          "properties": {
-            "name": { "type": "string" },
-            "code": { "type": "string" },
-            "color": { "type": "string" },
-            "sessions": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "session_id": { "type": "string" },
-                  "days": { "type": "array", "items": { "type": "string" }, "description": "Array of days e.g., ['MON', 'WED']." },
-                  "startTime": { "type": "string" },
-                  "endTime": { "type": "string" },
-                  "location": { "type": "string" }
-                },
-                "additionalProperties": true
-              }
-            }
-          },
-          "additionalProperties": true
-        }
-      },
-      "required": ["timetableId", "courseId", "updates"]
-    }
-  },
-  {
-    "name": "deleteCourse",
-    "description": "Delete a course from a timetable.",
-    "parameters": {
-      "type": "object",
-      "properties": {
-        "timetableId": { "type": "string", "description": "The timetable containing the course." },
-        "courseId": { "type": "string", "description": "The ID of the course to delete." }
-      },
-      "required": ["timetableId", "courseId"]
-    }
-  },
-  { "name": "resetCourses", "description": "Remove all courses from state.", "parameters": { "type": "object", "properties": {} } },
-  { "name": "addTimetable", "description": "Create a new timetable (named automatically, set active) and return it.", "parameters": { "type": "object", "properties": {} } },
-  {
-    "name": "setActiveTimetable",
-    "description": "Set the currently active timetable by ID.",
-    "parameters": {
-      "type": "object",
-      "properties": { "id": { "type": "string", "description": "The timetable ID to set as active." } },
-      "required": ["id"]
-    }
-  },
-  {
-    "name": "updateTimetable",
-    "description": "Replace an existing timetable with the provided object (matched by id).",
-    "parameters": {
-      "type": "object",
-      "properties": {
-        "updatedTimetable": {
-          "type": "object",
-          "description": "Full Timetable object to persist.",
-          "properties": {
-            "id": { "type": "string" },
-            "name": { "type": "string" },
-            "userId": { "type": "string" },
-            "createdAt": { "type": "string", "format": "date-time" },
-            "updatedAt": { "type": "string", "format": "date-time" },
-            "isActive": { "type": "boolean" }
-          },
-          "required": ["id"],
-          "additionalProperties": true
-        }
-      },
-      "required": ["updatedTimetable"]
-    }
-  },
-  {
-    "name": "getTimetable",
-    "description": "Fetch a single timetable by ID.",
-    "parameters": {
-      "type": "object",
-      "properties": { "id": { "type": "string", "description": "The timetable ID to retrieve." } },
-      "required": ["id"]
-    }
-  },
-  {
-    "name": "updateMany",
-    "description": "Batch update many timetables. For each item, merges provided fields and refreshes updatedAt.",
-    "parameters": {
-      "type": "object",
-      "properties": {
-        "updates": {
-          "type": "array",
-          "description": "Array of updates to apply.",
-          "items": {
-            "type": "object",
-            "properties": {
-              "id": { "type": "string", "description": "Timetable ID to update." },
-              "updates": {
-                "type": "object",
-                "description": "Partial Timetable (excluding id, createdAt, courses).",
-                "properties": {
-                  "name": { "type": "string" },
-                  "userId": { "type": "string" },
-                  "updatedAt": { "type": "string", "format": "date-time" },
-                  "isActive": { "type": "boolean" }
-                },
-                "additionalProperties": true
-              }
-            },
-            "required": ["id", "updates"],
-            "additionalProperties": false
-          }
-        }
-      },
-      "required": ["updates"]
-    }
-  },
-  {
-    "name": "deleteTimetable",
-    "description": "Delete a timetable by ID. If it was active, clears the activeTimetableId.",
-    "parameters": {
-      "type": "object",
-      "properties": { "id": { "type": "string", "description": "The timetable ID to delete." } },
-      "required": ["id"]
-    }
-  },
-  { "name": "getTimetables", "description": "Return all timetables.", "parameters": { "type": "object", "properties": {} } },
-  { "name": "getTimetableActiveId", "description": "Get the ID of the currently active timetable.", "parameters": { "type": "object", "properties": {} } }
-]
-`,
-      abortSignal: init?.signal as AbortSignal | undefined,
-    });
-    console.log(result);
-    return result.toUIMessageStreamResponse();
-  };
-
-export function Chatbot({ className }: ChatbotProps) {
   const [input, setInput] = useState("");
-  const [files, setFiles] = useState<FileList | undefined>(undefined);
   const [isClient, setIsClient] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedTimetableId, setSelectedTimetableId] = useState<string | null>(
     null
   );
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [copiedMessageIds, setCopiedMessageIds] = useState<Set<string>>(new Set());
   const isLoadingMessagesRef = useRef(false);
   const isCreatingChatRef = useRef(false);
 
@@ -958,7 +84,9 @@ export function Chatbot({ className }: ChatbotProps) {
     activeTimetableId,
     getActiveTimetableId,
     deleteTimetable,
-    getTimetable
+    getTimetable,
+    updateMany,
+    getTimetables,
   } = useTimetableStore();
   const {
     courses,
@@ -969,6 +97,8 @@ export function Chatbot({ className }: ChatbotProps) {
     resetCourses,
     getCourses,
   } = useCourseStore();
+  
+  const { selectedWallpaper, websiteBackgroundImage } = useSettingsStore();
 
   const currentCourses = activeTimetableId ? getCourses(activeTimetableId) : [];
   const {
@@ -980,72 +110,932 @@ export function Chatbot({ className }: ChatbotProps) {
     clearActiveChat,
   } = useChatStore();
 
-  const {
-    error,
-    status,
-    sendMessage,
-    messages,
-    regenerate,
-    stop,
-    setMessages,
-  } = useChat<BuiltInAIUIMessage>({
-    transport: new DefaultChatTransport({
-      fetch: customFetch(),
-    }),
-    onError(error) {
-      console.log(error)
-      toast.error(error.message);
-    },
-    onData: (dataPart) => {
-      // Handle transient notifications
-      // we can also access the date-modelDownloadProgress here
-      if (dataPart.type === "data-notification") {
-        if (dataPart.data.level === "error") {
-          toast.error(dataPart.data.message);
-        } else if (dataPart.data.level === "warning") {
-          toast.warning(dataPart.data.message);
+  const [messages, setMessages] = useState<BuiltInAIUIMessage[]>([]);
+  const [status, setStatus] = useState("idle");
+  const [error, setError] = useState<Error | null>(null);
+  const [streamingMessageId, setStreamingMessageId] = useState<string | null>(
+    null
+  );
+
+  // Chrome AI Language Model state
+  const [languageModelAvailability, setLanguageModelAvailability] = useState<
+    string | null
+  >(null);
+  const [languageModelDownloadProgress, setLanguageModelDownloadProgress] =
+    useState<number>(0);
+  const [isLanguageModelDownloading, setIsLanguageModelDownloading] =
+    useState(false);
+  const [languageModelSession, setLanguageModelSession] = useState<any>(null);
+
+  const timetableTool: FunctionDeclarationsTool = {
+    functionDeclarations: [
+      {
+        name: "getCourses",
+        description: "Return all courses for a given timetable.",
+        parameters: Schema.object({
+          properties: {
+            timetableId: Schema.string({
+              description: "The ID of the timetable to filter courses by.",
+            }),
+          },
+          required: ["timetableId"],
+        }),
+      },
+      {
+        name: "addCourse",
+        description:
+          "Create a new course (and its sessions) under a timetable. Missing session_id values will be generated.",
+        parameters: Schema.object({
+          properties: {
+            timetableId: Schema.string({
+              description: "The ID of the timetable to add the course to.",
+            }),
+            course: Schema.object({
+              description:
+                "CourseWithSessionsInput payload. Any extra fields are accepted.",
+              properties: {
+                id: Schema.string({
+                  description: "Optional client-provided course ID.",
+                }),
+                timetable_id: Schema.string({
+                  description: "Optional; will be overridden by timetableId.",
+                }),
+                name: Schema.string({ description: "Course name." }),
+                code: Schema.string({ description: "Course code." }),
+                color: Schema.string({ description: "Display color." }),
+                sessions: Schema.array({
+                  description: "List of sessions included with the course.",
+                  items: Schema.object({
+                    properties: {
+                      days: Schema.array({
+                        description: "Array of days e.g., ['MON', 'WED'].",
+                        items: Schema.string(),
+                      }),
+                      startTime: Schema.string({
+                        description: "Start time (HH:mm).",
+                      }),
+                      endTime: Schema.string({
+                        description: "End time (HH:mm).",
+                      }),
+                      location: Schema.string({ description: "Location." }),
+                    },
+                  }),
+                }),
+              },
+              required: ["sessions"],
+            }),
+          },
+          required: ["timetableId", "course"],
+        }),
+      },
+      {
+        name: "addCoursesBulk",
+        description:
+          "Create multiple new courses (and their sessions) under a timetable in a single operation. Missing session_id values will be generated.",
+        parameters: Schema.object({
+          properties: {
+            timetableId: Schema.string({
+              description: "The ID of the timetable to add the courses to.",
+            }),
+            courses: Schema.array({
+              description:
+                "Array of CourseWithSessionsInput payloads. Any extra fields are accepted.",
+              items: Schema.object({
+                properties: {
+                  id: Schema.string({
+                    description: "Optional client-provided course ID.",
+                  }),
+                  timetable_id: Schema.string({
+                    description: "Optional; will be overridden by timetableId.",
+                  }),
+                  name: Schema.string({ description: "Course name." }),
+                  code: Schema.string({ description: "Course code." }),
+                  color: Schema.string({ description: "Display color." }),
+                  sessions: Schema.array({
+                    description: "List of sessions included with the course.",
+                    items: Schema.object({
+                      properties: {
+                        days: Schema.array({
+                          description: "Array of days e.g., ['MON', 'WED'].",
+                          items: Schema.string(),
+                        }),
+                        startTime: Schema.string({
+                          description: "Start time (HH:mm).",
+                        }),
+                        endTime: Schema.string({
+                          description: "End time (HH:mm).",
+                        }),
+                        location: Schema.string({ description: "Location." }),
+                      },
+                    }),
+                  }),
+                },
+                required: ["sessions"],
+              }),
+            }),
+          },
+          required: ["timetableId", "courses"],
+        }),
+      },
+      {
+        name: "updateCourse",
+        description:
+          "Update fields on an existing course within a timetable. Also updates updatedAt.",
+        parameters: Schema.object({
+          properties: {
+            timetableId: Schema.string({
+              description: "The timetable that contains the course.",
+            }),
+            courseId: Schema.string({
+              description: "The course ID to update.",
+            }),
+            updates: Schema.object({
+              description:
+                "Partial<CourseWithSessions>. Any supplied fields will overwrite existing values.",
+              properties: {
+                name: Schema.string(),
+                code: Schema.string(),
+                color: Schema.string(),
+                sessions: Schema.array({
+                  items: Schema.object({
+                    properties: {
+                      session_id: Schema.string(),
+                      days: Schema.array({
+                        description: "Array of days e.g., ['MON', 'WED'].",
+                        items: Schema.string(),
+                      }),
+                      startTime: Schema.string(),
+                      endTime: Schema.string(),
+                      location: Schema.string(),
+                    },
+                  }),
+                }),
+              },
+            }),
+          },
+          required: ["timetableId", "courseId", "updates"],
+        }),
+      },
+      {
+        name: "deleteCourse",
+        description: "Delete a course from a timetable.",
+        parameters: Schema.object({
+          properties: {
+            timetableId: Schema.string({
+              description: "The timetable containing the course.",
+            }),
+            courseId: Schema.string({
+              description: "The ID of the course to delete.",
+            }),
+          },
+          required: ["timetableId", "courseId"],
+        }),
+      },
+      {
+        name: "resetCourses",
+        description: "Remove all courses from state.",
+        parameters: Schema.object({
+          properties: {},
+        }),
+      },
+      {
+        name: "addTimetable",
+        description:
+          "Create a new timetable (named automatically, set active) and return it.",
+        parameters: Schema.object({
+          properties: {},
+        }),
+      },
+      {
+        name: "setActiveTimetable",
+        description: "Set the currently active timetable by ID.",
+        parameters: Schema.object({
+          properties: {
+            id: Schema.string({
+              description: "The timetable ID to set as active.",
+            }),
+          },
+          required: ["id"],
+        }),
+      },
+      {
+        name: "updateTimetable",
+        description:
+          "Replace an existing timetable with the provided object (matched by id).",
+        parameters: Schema.object({
+          properties: {
+            updatedTimetable: Schema.object({
+              description: "Full Timetable object to persist.",
+              properties: {
+                id: Schema.string(),
+                name: Schema.string(),
+                userId: Schema.string(),
+                createdAt: Schema.string({
+                  description: "Creation timestamp (ISO 8601 date-time).",
+                }),
+                updatedAt: Schema.string({
+                  description: "Last update timestamp (ISO 8601 date-time).",
+                }),
+                isActive: Schema.boolean(),
+              },
+              required: ["id"],
+            }),
+          },
+          required: ["updatedTimetable"],
+        }),
+      },
+      {
+        name: "getTimetable",
+        description: "Fetch a single timetable by ID.",
+        parameters: Schema.object({
+          properties: {
+            id: Schema.string({
+              description: "The timetable ID to retrieve.",
+            }),
+          },
+          required: ["id"],
+        }),
+      },
+      {
+        name: "updateMany",
+        description:
+          "Batch update many timetables. For each item, merges provided fields and refreshes updatedAt.",
+        parameters: Schema.object({
+          properties: {
+            updates: Schema.array({
+              description: "Array of updates to apply.",
+              items: Schema.object({
+                properties: {
+                  id: Schema.string({
+                    description: "Timetable ID to update.",
+                  }),
+                  updates: Schema.object({
+                    description:
+                      "Partial Timetable (excluding id, createdAt, courses).",
+                    properties: {
+                      name: Schema.string(),
+                      userId: Schema.string(),
+                      updatedAt: Schema.string({
+                        description:
+                          "Last update timestamp (ISO 8601 date-time).",
+                      }),
+                      isActive: Schema.boolean(),
+                    },
+                  }),
+                },
+                required: ["id", "updates"],
+              }),
+            }),
+          },
+          required: ["updates"],
+        }),
+      },
+      {
+        name: "deleteTimetable",
+        description:
+          "Delete a timetable by ID. If it was active, clears the activeTimetableId.",
+        parameters: Schema.object({
+          properties: {
+            id: Schema.string({
+              description: "The timetable ID to delete.",
+            }),
+          },
+          required: ["id"],
+        }),
+      },
+      {
+        name: "getTimetables",
+        description: "Return all timetables.",
+        parameters: Schema.object({
+          properties: {},
+        }),
+      },
+      {
+        name: "getTimetableActiveId",
+        description: "Get the ID of the currently active timetable.",
+        parameters: Schema.object({
+          properties: {},
+        }),
+      },
+    ],
+  };
+
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const streamContentRef = useRef<string>("");
+  const streamIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [isStreaming, setIsStreaming] = useState(false);
+
+  const sendMessage = async (
+    message: { text: string },
+    options?: any
+  ) => {
+    if (!message.text.trim()) return;
+
+    const userMessage: any = {
+      id: uuidv4(),
+      role: "user",
+      content: message.text,
+      parts: [{ type: "text", text: message.text }],
+      createdAt: new Date(),
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
+    setStatus("thinking");
+    setError(null);
+
+    abortControllerRef.current = new AbortController();
+
+    const jsonSchema = Schema.enumString({
+      enum: ["tool-call", "answer-prompt"],
+    });
+
+    try {
+      const googleAI = getAI(firebaseApp);
+
+      // Step 1: Create decision model (ONLY_ON_DEVICE) to determine intent
+      const decisionModel = getGenerativeModel(googleAI, {
+        mode: InferenceMode.ONLY_ON_DEVICE,
+        onDeviceParams: {
+          promptOptions: {
+            responseConstraint: jsonSchema,
+          },
+        },
+      });
+
+      // System prompt for tool calling decision
+      const systemPrompt = `Think step by step before deciding whether to call a tool or answer the prompt directly.
+
+          STEP-BY-STEP ANALYSIS:
+          1. ANALYZE THE CURRENT MESSAGE: What is the user explicitly asking for?
+          2. CONSIDER PREVIOUS CONTEXT: Does this message reference or continue from previous instructions that involved course management?
+          3. IDENTIFY INTENT: Is this about course operations (add/delete/edit/manage) or general conversation?
+          4. CHECK FOR IMPLICIT REQUESTS: Even if not explicitly stated, does the context suggest course management is needed?
+          5. MAKE DECISION: Based on the analysis above, choose the appropriate action.
+
+          DECISION RULES:
+          - Answer tool-call if user wants to add, delete, edit, or manage courses (explicitly or implicitly based on context)
+          - Answer answer-prompt for simple questions, help, or general conversation that doesn't involve course management
+
+          IMPORTANT: Pay special attention to context from previous messages. If previous instructions mentioned course operations and the current message seems to be a continuation or clarification of those instructions, consider tool-call even if the current message alone seems conversational.`;
+
+      // Get decision from on-device model with error handling
+      let decisionResult;
+      try {
+        decisionResult = await decisionModel.generateContent([
+          { text: systemPrompt },
+          { text: `User message: "${message.text}"` },
+        ]);
+      } catch (decisionError) {
+        console.error("Decision model error:", decisionError);
+        // Default to answer-prompt if decision model fails
+        decisionResult = { response: { text: () => "answer-prompt" } };
+      }
+
+      setStatus("submitted");
+
+      const rawDecision = decisionResult.response.text().trim();
+      console.log("Raw decision response:", rawDecision);
+      console.log("Raw decision type:", typeof rawDecision);
+
+      // Try to parse as JSON if it looks like JSON
+      let decision;
+      try {
+        if (rawDecision.startsWith('"') && rawDecision.endsWith('"')) {
+          decision = JSON.parse(rawDecision);
+        } else if (rawDecision.startsWith("{") || rawDecision.startsWith("[")) {
+          const parsed = JSON.parse(rawDecision);
+          decision = parsed;
         } else {
-          toast.info(dataPart.data.message);
+          decision = rawDecision;
         }
-      }
-    },
-    onFinish: (options) => {
-      console.log(options);
-      let messageContent = "";
-      if (typeof options.message === "string") {
-        messageContent = options.message;
-      } else if (options.message.parts) {
-        messageContent = options.message.parts
-          .filter((part: any) => part.type === "text")
-          .map((part: any) => part.text)
-          .join("");
+      } catch (e) {
+        decision = rawDecision;
       }
 
-      const toolResult = parseToolResult(messageContent);
+      console.log("Parsed decision:", decision);
+      console.log("Decision type:", typeof decision);
 
-      console.log(toolResult);
-      
-      if (toolResult) {
-        const timetableActions = {
-          addCourse,
-          deleteCourse,
-          getCourses,
-          getActiveTimetableId,
-          addCoursesBulk,
-          updateCourse,
-          resetCourses,
-          addTimetable,
-          setActiveTimetable,
-          updateTimetable,
-          getTimetable
-        };
-        
-        executeToolFunction(toolResult, activeTimetableId, timetableActions, {});
+      // Step 2: Route to appropriate model based on decision
+      let targetModel;
+      let modelHistory;
 
+      // Check if decision indicates tool-call (handle various response formats)
+      const isToolCall =
+        decision === "tool-call" ||
+        (typeof decision === "object" && decision?.value === "tool-call") ||
+        (typeof decision === "string" &&
+          decision.toLowerCase().includes("tool-call"));
+
+      console.log("Is tool call?", isToolCall);
+
+      if (isToolCall) {
+        // Use ONLY_IN_CLOUD for tool calls
+        console.log("🌐 Using CLOUD model for tool call response");
+        targetModel = getGenerativeModel(googleAI, {
+          mode: InferenceMode.ONLY_IN_CLOUD,
+          inCloudParams: {
+            model: "gemini-2.5-flash",
+            systemInstruction: `
+
+You have access to the functions listed at the end of this prompt. When the user asks to read or modify timetables/courses, you MUST decide to call the function call or answering user question.
+If you decide to do function call. You must follow the JSON format specified below.
+
+IMPORTANT
+- The current active timetable ID is: ${activeTimetableId}.
+- MANDATORY: When making ANY function call that requires a timetableId parameter, you MUST ALWAYS pass "${activeTimetableId}" as the timetableId value unless the user explicitly requests a different specific timetable ID.
+- CRITICAL: Never omit the timetableId parameter or use placeholder values. Always use the exact value "${activeTimetableId}" for all timetable-related operations.
+- STRICTLY FORBIDDEN: You are NOT ALLOWED to pass null, undefined, or any placeholder values for timetableId. MUST use "${activeTimetableId}".
+- Whenever a function requires a timetableId, always pass "${activeTimetableId}" unless the user explicitly requests a different timetable ID.
+
+CURRENT COURSES CONTEXT
+The following courses are currently available in the active timetable (${activeTimetableId}):
+${JSON.stringify(courses, null, 2)}
+
+- timetableId: ALWAYS use "${activeTimetableId}" - never null, undefined, or placeholders
+- courseId: Use the "code" field from the courses array, NOT the "id" field, not the course name, or any other identifier
+
+PARAMETER COMPLETION REQUIREMENT
+If user doesn't provide enough parameters or specify required parameters, you MUST create them by yourself. This is very important:
+- Generate reasonable default values for missing parameters
+- Use logical assumptions based on context and available data
+- Never ask the user for missing parameters - always complete them automatically
+- Ensure all function calls have complete and valid parameters
+
+COURSE COLOR PALETTE REQUIREMENT
+
+1. AUTOMATIC COLOR ASSIGNMENT - Automatically assign a pastel color from the approved palette when user doesn't specify one, never ask. YOU ARE OBLIGED TO PROVIDE A COLOR if the user didn't mention one.
+2. CATEGORY-BASED SELECTION - Match colors to categories: Tech uses soft blues/mint greens, Design uses pinks/lavenders, Business uses peach/yellows.
+3. COLOR VALIDATION - Convert any harsh or bright user-provided colors to the nearest pastel equivalent automatically.
+4. EVEN DISTRIBUTION - Rotate colors across courses to avoid duplicates and maintain visual variety.
+5. PASTEL-ONLY ENFORCEMENT - Use only soft colors with high brightness and low saturation from the approved palette.
+6. HEX CODE FORMAT - All colors MUST be provided in hex code format (e.g., #FFB6C1, #E6E6FA, #F0E68C). NEVER use color names like "red", "blue", "pink" - ONLY hex codes are allowed.
+
+Always tell the user the operation that you do what function you call and conclusion of your action`,
+            tools: [timetableTool],
+          },
+        });
+      } else {
+        // Use ONLY_ON_DEVICE for answer prompts
+        console.log("📱 Using ON-DEVICE model for answer response");
+        targetModel = getGenerativeModel(googleAI, {
+          mode: InferenceMode.ONLY_ON_DEVICE,
+        });
       }
-    },
-    experimental_throttle: 150,
-  });
+
+      modelHistory = [
+        ...messages.map((msg: any) => ({
+          role: msg.role === "assistant" ? "model" : "user",
+          parts: [{ text: msg.content }],
+        })),
+      ];
+
+      console.log(modelHistory);
+      console.log(messages);
+
+      const chat = targetModel.startChat({
+        history: modelHistory as any,
+      });
+
+      const assistantMessage: any = {
+        id: uuidv4(),
+        role: "assistant",
+        content: "",
+        parts: [{ type: "text", text: "" }],
+        createdAt: new Date(),
+      };
+
+      setMessages((prev) => [...prev, assistantMessage]);
+      setStreamingMessageId(assistantMessage.id);
+      streamContentRef.current = "";
+
+      console.log(message.text);
+
+      try {
+        const result = await chat.sendMessage(message.text);
+        const functionCalls = result.response.functionCalls();
+
+        console.log("Response result:", result);
+        console.log("Function calls:", functionCalls);
+
+        let functionCall: any = result.response.functionCalls();
+
+        if (functionCalls && functionCalls.length > 0) {
+          console.log("Processing function calls...");
+
+          if (functionCall[0]) {
+            const { name: functionName, args } = functionCall[0];
+            let functionResult: any = null;
+            let functionDescription = "";
+
+            try {
+              // Execute the function based on its name
+              switch (functionName) {
+                case "getCourses":
+                  functionResult = getCourses(args.timetableId);
+                  functionDescription = `Retrieved ${functionResult.length} courses for timetable ${args.timetableId}`;
+                  break;
+
+                case "addCourse":
+                  functionResult = addCourse(args.timetableId, args.course);
+                  functionDescription = `Added course "${args.course.name}" (${args.course.code}) to timetable ${args.timetableId}`;
+                  break;
+
+                case "addCoursesBulk":
+                  functionResult = addCoursesBulk(
+                    args.timetableId,
+                    args.courses
+                  );
+                  functionDescription = `Added ${args.courses.length} courses to timetable ${args.timetableId}`;
+                  break;
+
+                case "updateCourse":
+                  updateCourse(args.timetableId, args.courseId, args.updates);
+                  functionResult = { success: true };
+                  functionDescription = `Updated course ${args.courseId} in timetable ${args.timetableId}`;
+                  break;
+
+                case "deleteCourse":
+                  deleteCourse(args.timetableId, args.courseId);
+                  functionResult = { success: true };
+                  functionDescription = `Deleted course ${args.courseId} from timetable ${args.timetableId}`;
+                  break;
+
+                case "resetCourses":
+                  resetCourses();
+                  functionResult = { success: true };
+                  functionDescription = "Reset all courses";
+                  break;
+
+                case "addTimetable":
+                  functionResult = addTimetable();
+                  functionDescription = `Created new timetable "${functionResult.name}" with ID ${functionResult.id}`;
+                  break;
+
+                case "setActiveTimetable":
+                  setActiveTimetable(args.id);
+                  functionResult = { success: true };
+                  functionDescription = `Set timetable ${args.id} as active`;
+                  break;
+
+                case "updateTimetable":
+                  updateTimetable(args.updatedTimetable);
+                  functionResult = { success: true };
+                  functionDescription = `Updated timetable ${args.updatedTimetable.id}`;
+                  break;
+
+                case "getTimetable":
+                  functionResult = getTimetable(args.id);
+                  functionDescription = functionResult
+                    ? `Retrieved timetable "${functionResult.name}" (${args.id})`
+                    : `Timetable ${args.id} not found`;
+                  break;
+
+                case "updateMany":
+                  updateMany(args.updates);
+                  functionResult = { success: true };
+                  functionDescription = `Updated ${args.updates.length} timetables`;
+                  break;
+
+                case "deleteTimetable":
+                  deleteTimetable(args.id);
+                  functionResult = { success: true };
+                  functionDescription = `Deleted timetable ${args.id}`;
+                  break;
+
+                case "getTimetables":
+                  functionResult = getTimetables();
+                  functionDescription = `Retrieved ${functionResult.length} timetables`;
+                  break;
+
+                case "getTimetableActiveId":
+                  functionResult = getActiveTimetableId();
+                  functionDescription = functionResult
+                    ? `Active timetable ID: ${functionResult}`
+                    : "No active timetable";
+                  break;
+
+                default:
+                  functionResult = {
+                    error: `Unknown function: ${functionName}`,
+                  };
+                  functionDescription = `Error: Unknown function "${functionName}"`;
+              }
+
+              // Create a comprehensive response
+              let finalText = `${functionDescription}\n\nFunction executed: ${functionName}\nResult: ${JSON.stringify(
+                functionResult,
+                null,
+                2
+              )}`;
+
+              // Ensure we always have content to display
+              if (!finalText.trim()) {
+                finalText = "Task completed successfully.";
+              }
+
+              let chunkBuffer = finalText;
+              let displayedContent = "";
+              let hasStartedStreaming = false;
+
+              streamIntervalRef.current = setInterval(() => {
+                if (chunkBuffer.length > 0) {
+                  const charsToAdd = Math.min(3, chunkBuffer.length);
+                  displayedContent += chunkBuffer.slice(0, charsToAdd);
+                  chunkBuffer = chunkBuffer.slice(charsToAdd);
+
+                  // Only set streaming status when we actually receive content
+                  if (!hasStartedStreaming) {
+                    setIsStreaming(true);
+                    setStatus("streaming");
+                    hasStartedStreaming = true;
+                  }
+
+                  if (displayedContent.trim()) {
+                    setMessages((prev) =>
+                      prev.map((msg) =>
+                        msg.id === assistantMessage.id
+                          ? {
+                              ...msg,
+                              content: displayedContent,
+                              parts: [{ type: "text", text: displayedContent }],
+                            }
+                          : msg
+                      )
+                    );
+                  }
+                }
+              }, 30);
+
+              const waitForBufferComplete = () => {
+                return new Promise<void>((resolve) => {
+                  const checkBuffer = () => {
+                    if (chunkBuffer.length === 0) {
+                      resolve();
+                    } else {
+                      setTimeout(checkBuffer, 30);
+                    }
+                  };
+                  checkBuffer();
+                });
+              };
+
+              await waitForBufferComplete();
+            } catch (error) {
+              console.error("Function execution error:", error);
+              const errorText = `Error executing function ${functionName}: ${
+                error instanceof Error ? error.message : "Unknown error"
+              }. Please try again or rephrase your request.`;
+
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === assistantMessage.id
+                    ? {
+                        ...msg,
+                        content: errorText,
+                        parts: [{ type: "text", text: errorText }],
+                      }
+                    : msg
+                )
+              );
+            }
+          }
+        } else {
+          console.log("No function calls, using streaming response...");
+
+          try {
+            const streamResult = await chat.sendMessageStream(message.text);
+
+            let chunkBuffer = "";
+            let displayedContent = "";
+            let hasStartedStreaming = false;
+            let hasReceivedContent = false;
+
+            streamIntervalRef.current = setInterval(() => {
+              if (chunkBuffer.length > 0) {
+                const charsToAdd = Math.min(3, chunkBuffer.length);
+                displayedContent += chunkBuffer.slice(0, charsToAdd);
+                chunkBuffer = chunkBuffer.slice(charsToAdd);
+
+                if (displayedContent.trim()) {
+                  hasReceivedContent = true;
+                  setMessages((prev) =>
+                    prev.map((msg) =>
+                      msg.id === assistantMessage.id
+                        ? {
+                            ...msg,
+                            content: displayedContent,
+                            parts: [{ type: "text", text: displayedContent }],
+                          }
+                        : msg
+                    )
+                  );
+                }
+              }
+            }, 30);
+
+            for await (const chunk of streamResult.stream) {
+              if (abortControllerRef.current?.signal.aborted) {
+                console.log("Generation aborted by user");
+                // Ensure aborted message has content
+                if (!hasReceivedContent || !streamContentRef.current.trim()) {
+                  const abortedMessage = "Response was stopped by user.";
+                  setMessages((prev) =>
+                    prev.map((msg) =>
+                      msg.id === assistantMessage.id
+                        ? {
+                            ...msg,
+                            content: abortedMessage,
+                            parts: [{ type: "text", text: abortedMessage }],
+                          }
+                        : msg
+                    )
+                  );
+                }
+                break;
+              }
+
+              const delta = chunk.text();
+              if (!delta) continue;
+
+              // Only set streaming status when we actually receive content
+              if (!hasStartedStreaming) {
+                setIsStreaming(true);
+                setStatus("streaming");
+                hasStartedStreaming = true;
+              }
+
+              if (delta) {
+                chunkBuffer += delta;
+                streamContentRef.current += delta;
+                hasReceivedContent = true;
+              }
+            }
+
+            const waitForBufferComplete = () => {
+              return new Promise<void>((resolve) => {
+                const checkBuffer = () => {
+                  if (chunkBuffer.length === 0) {
+                    resolve();
+                  } else {
+                    setTimeout(checkBuffer, 30);
+                  }
+                };
+                checkBuffer();
+              });
+            };
+
+            await waitForBufferComplete();
+
+            // Ensure we always have content to display
+            if (!hasReceivedContent || !streamContentRef.current.trim()) {
+              const fallbackContent =
+                "I understand your request. How can I help you further?";
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === assistantMessage.id
+                    ? {
+                        ...msg,
+                        content: fallbackContent,
+                        parts: [{ type: "text", text: fallbackContent }],
+                      }
+                    : msg
+                )
+              );
+            }
+          } catch (streamError) {
+            console.error("Streaming error:", streamError);
+            const fallbackMessage =
+              "I apologize, but I encountered an issue generating a response. Please try rephrasing your question or try again.";
+
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantMessage.id
+                  ? {
+                      ...msg,
+                      content: fallbackMessage,
+                      parts: [{ type: "text", text: fallbackMessage }],
+                    }
+                  : msg
+              )
+            );
+          }
+        }
+      } catch (err) {
+        console.error("Streaming error:", err);
+        setStatus("error");
+      } finally {
+        if (streamIntervalRef.current) {
+          clearInterval(streamIntervalRef.current);
+          streamIntervalRef.current = null;
+        }
+        setIsStreaming(false);
+        setStreamingMessageId(null);
+        setStatus("idle");
+      }
+    } catch (err) {
+      console.error("Google AI error:", err);
+      setError(err as Error);
+
+      setMessages((prev) => {
+        const filtered = prev.filter(
+          (msg: any) => msg.role !== "assistant" || msg.content !== ""
+        );
+        return [
+          ...filtered,
+          {
+            id: uuidv4(),
+            role: "assistant",
+            content:
+              "I apologize, but I encountered an unexpected error while processing your request. Please try again or rephrase your question.",
+            parts: [
+              {
+                type: "text",
+                text: "I apologize, but I encountered an unexpected error while processing your request. Please try again or rephrase your question.",
+              },
+            ],
+            createdAt: new Date(),
+          },
+        ];
+      });
+    } finally {
+      // Comprehensive cleanup
+      setStatus("idle");
+      setIsStreaming(false);
+      setStreamingMessageId(null);
+
+      // Clear streaming interval
+      if (streamIntervalRef.current) {
+        clearInterval(streamIntervalRef.current);
+        streamIntervalRef.current = null;
+      }
+
+      // Reset abort controller
+      abortControllerRef.current = null;
+    }
+  };
+
+  const stop = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      setStatus("idle");
+      setStreamingMessageId(null);
+      toast.info("Generation stopped");
+
+      // Ensure any empty message gets content when stopped
+      if (streamingMessageId) {
+        setMessages((prev) =>
+          prev.map((msg: any) =>
+            msg.id === streamingMessageId &&
+            (!msg.content || !msg.content.trim())
+              ? {
+                  ...msg,
+                  content: "Response was stopped by user.",
+                  parts: [
+                    { type: "text", text: "Response was stopped by user." },
+                  ],
+                }
+              : msg
+          )
+        );
+      }
+    }
+
+    if (streamIntervalRef.current) {
+      clearInterval(streamIntervalRef.current);
+      streamIntervalRef.current = null;
+    }
+    setIsStreaming(false);
+  };
+
+  const regenerate = async () => {
+    if (messages.length < 2) return;
+
+    const lastUserMessage: any = messages.findLast((m) => m.role === "user");
+    if (!lastUserMessage) return;
+
+    setMessages((prev) => prev.slice(0, -1));
+
+    await sendMessage({ text: lastUserMessage.content });
+  };
+
+  const handleCopy = async (content: string, messageId: string) => {
+    try {
+      await navigator.clipboard.writeText(content.trim());
+      setCopiedMessageIds(prev => new Set(prev).add(messageId));
+      setTimeout(() => {
+        setCopiedMessageIds(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(messageId);
+          return newSet;
+        });
+      }, 2000);
+      toast.success("Copied to clipboard!");
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
+      toast.error("Failed to copy to clipboard");
+    }
+  };
 
   useEffect(() => {
     setIsClient(true);
@@ -1127,6 +1117,39 @@ export function Chatbot({ className }: ChatbotProps) {
     }
   }, [timetables, activeTimetableId, setActiveTimetable]);
 
+  // Chrome AI Language Model initialization - simplified since we handle it in new chat
+  useEffect(() => {
+    const checkLanguageModelSupport = async () => {
+      try {
+        // Check if LanguageModel is available in the browser
+        if (
+          typeof window !== "undefined" &&
+          "ai" in window &&
+          "languageModel" in (window as any).ai
+        ) {
+          const LanguageModel = (window as any).ai.languageModel;
+
+          // Check availability
+          const availability = await LanguageModel.availability();
+          setLanguageModelAvailability(availability);
+          console.log("Language Model availability:", availability);
+        } else {
+          console.log(
+            "Chrome AI Language Model is not supported in this browser"
+          );
+          setLanguageModelAvailability("not-supported");
+        }
+      } catch (error) {
+        console.error("Error checking Language Model support:", error);
+        setLanguageModelAvailability("error");
+      }
+    };
+
+    if (isClient) {
+      checkLanguageModelSupport();
+    }
+  }, [isClient]);
+
   const ensureTimetableExists = () => {
     if (timetables.length === 0) {
       const newTimetable = addTimetable();
@@ -1199,15 +1222,161 @@ export function Chatbot({ className }: ChatbotProps) {
     }
   };
 
-  const handleNewChat = () => {
+  const handleNewChat = async () => {
     clearActiveChat();
     setMessages([]);
     setInput("");
-    setFiles(undefined);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
+
+    // Check LanguageModel availability and download if needed
+    await initializeLanguageModelForNewChat();
+
     toast.success("Started new chat");
+  };
+
+  const initializeLanguageModelForNewChat = async () => {
+    try {
+      // Check if LanguageModel is available in the browser
+      if (
+        typeof window !== "undefined" &&
+        "ai" in window &&
+        "languageModel" in (window as any).ai
+      ) {
+        const LanguageModel = (window as any).ai.languageModel;
+
+        // Check availability first
+        const availability = await LanguageModel.availability();
+        setLanguageModelAvailability(availability);
+        console.log("Language Model availability:", availability);
+
+        // If the model needs to be downloaded, show loading and download
+        if (availability === "downloadable") {
+          setIsLanguageModelDownloading(true);
+          setLanguageModelDownloadProgress(0);
+
+          // Add initial downloading message
+          const downloadingMessage: any = {
+            id: uuidv4(),
+            role: "assistant",
+            content: "Downloading model... 0%",
+            parts: [
+              {
+                type: "text",
+                text: "Downloading model... 0%",
+                data: {
+                  message: "Downloading model... 0%",
+                  status: "downloading",
+                  progress: 0,
+                },
+              },
+            ],
+            createdAt: new Date(),
+          };
+
+          setMessages([downloadingMessage]);
+
+          // Create session with download monitoring
+          const session = await LanguageModel.create({
+            monitor(m: any) {
+              m.addEventListener("downloadprogress", (e: any) => {
+                const progress = Math.round(e.loaded * 100);
+                setLanguageModelDownloadProgress(progress);
+                console.log(`Downloaded ${progress}%`);
+
+                // Update the downloading message with progress
+                const updatedMessage: any = {
+                  id: downloadingMessage.id,
+                  role: "assistant",
+                  content: `Downloading model... ${progress}%`,
+                  parts: [
+                    {
+                      type: "text",
+                      text: `Downloading model... ${progress}%`,
+                      data: {
+                        message: `Downloading model... ${progress}%`,
+                        status: "downloading",
+                        progress: progress,
+                      },
+                    },
+                  ],
+                  createdAt: new Date(),
+                };
+
+                setMessages([updatedMessage]);
+
+                // When download is complete
+                if (progress >= 100) {
+                  setIsLanguageModelDownloading(false);
+
+                  // Replace downloading message with completion message
+                  const completionMessage: any = {
+                    id: uuidv4(),
+                    role: "assistant",
+                    content: "Model download completed! Ready to chat.",
+                    parts: [
+                      {
+                        type: "text",
+                        text: "Model download completed! Ready to chat.",
+                      },
+                    ],
+                    createdAt: new Date(),
+                  };
+
+                  setMessages([completionMessage]);
+
+                  // Clear the completion message after 2 seconds
+                  setTimeout(() => {
+                    setMessages([]);
+                  }, 2000);
+                }
+              });
+            },
+          });
+
+          setLanguageModelSession(session);
+        } else if (availability === "available") {
+          // Model is already available, create session without monitoring
+          const session = await LanguageModel.create();
+          setLanguageModelSession(session);
+
+          // Show brief ready message
+          const readyMessage: any = {
+            id: uuidv4(),
+            role: "assistant",
+            content: "Model ready! You can start chatting.",
+            parts: [
+              {
+                type: "text",
+                text: "Model ready! You can start chatting.",
+              },
+            ],
+            createdAt: new Date(),
+          };
+
+          setMessages([readyMessage]);
+
+          // Clear the ready message after 1 second
+          setTimeout(() => {
+            setMessages([]);
+          }, 1000);
+        } else {
+          // Model not available
+          console.log(
+            "Chrome AI Language Model is not available:",
+            availability
+          );
+          setLanguageModelAvailability(availability);
+        }
+      } else {
+        console.log(
+          "Chrome AI Language Model is not supported in this browser"
+        );
+        setLanguageModelAvailability("not-supported");
+      }
+    } catch (error) {
+      console.error("Error initializing Language Model for new chat:", error);
+      setLanguageModelAvailability("error");
+      setIsLanguageModelDownloading(false);
+    }
   };
 
   const handleNewTimetable = () => {
@@ -1215,93 +1384,57 @@ export function Chatbot({ className }: ChatbotProps) {
     clearActiveChat();
     setMessages([]);
     setInput("");
-    setFiles(undefined);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
     toast.success(`Created new timetable: ${newTimetable.name}`);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if ((input.trim() || files) && !isGenerating) {
+    if (input.trim() && !isGenerating) {
       sendMessage(
         {
           text: input,
-          files,
-        },
+        } as any,
         {
           body: {
             activeTimetableId: activeTimetableId,
-            courses: currentCourses.map(({ id, ...course }) => course)
+            courses: currentCourses.map(({ id, ...course }) => course),
           },
         }
       );
       setInput("");
-      setFiles(undefined);
-
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
     }
   };
 
   const handlePromptSubmit = () => {
-    if ((input.trim() || files) && !isGenerating) {
+    if (input.trim() && !isGenerating) {
       ensureTimetableExists();
       sendMessage(
         {
           text: input,
-          files,
-        },
+        } as any,
         {
           body: {
             activeTimetableId: activeTimetableId,
-            courses: currentCourses.map(({ id, ...course }) => course)
+            courses: currentCourses.map(({ id, ...course }) => course),
           },
         }
       );
       setInput("");
-      setFiles(undefined);
-
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      setFiles(e.target.files);
-    }
-  };
 
-  const removeFile = (indexToRemove: number) => {
-    if (files) {
-      const dt = new DataTransfer();
-      Array.from(files).forEach((file, index) => {
-        if (index !== indexToRemove) {
-          dt.items.add(file);
-        }
-      });
-      setFiles(dt.files);
-
-      if (fileInputRef.current) {
-        fileInputRef.current.files = dt.files;
-      }
-    }
-  };
 
   const copyMessageToClipboard = (message: any) => {
     const textContent = message.parts
       .filter((part: any) => part.type === "text" && "text" in part)
       .map((part: any) => (part as any).text)
-      .join("\n");
+      .join("\n")
+      .trim();
 
     navigator.clipboard.writeText(textContent);
   };
 
-  // Show loading state until client-side check completes
   if (!isClient) {
     return (
       <div className="flex flex-col h-[calc(100dvh)] items-center justify-center max-w-4xl mx-auto">
@@ -1310,7 +1443,7 @@ export function Chatbot({ className }: ChatbotProps) {
     );
   }
 
-  const isGenerating = status === "streaming";
+  const isGenerating = status === "streaming" || status === "submitted";
 
   const promptSuggestions = [
     "Help me plan my day",
@@ -1324,9 +1457,32 @@ export function Chatbot({ className }: ChatbotProps) {
       className={`relative overflow-hidden flex flex-col h-[calc(100vh-100px)] mb-24 ${className}`}
     >
       <div className="relative overflow-hidden flex flex-col h-full mb-1">
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 overflow-auto scrollbar">
           <ChatContainerRoot className="h-full">
             <ChatContainerContent className="flex flex-col gap-8 p-4">
+              {/* Model downloading loading state */}
+              {isLanguageModelDownloading && (
+                <div className="flex flex-col items-center justify-center py-8 space-y-4">
+                  <div className="flex items-center space-x-2">
+                    <Loader variant="typing" />
+                    <span className="text-lg font-medium">
+                      Downloading model...
+                    </span>
+                  </div>
+                  {languageModelDownloadProgress > 0 && (
+                    <div className="w-full max-w-md space-y-2">
+                      <Progress
+                        value={languageModelDownloadProgress}
+                        className="w-full"
+                      />
+                      <p className="text-center text-sm text-muted-foreground">
+                        {languageModelDownloadProgress}% complete
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {messages.map((m, index) => (
                 <Message
                   key={m.id}
@@ -1336,32 +1492,29 @@ export function Chatbot({ className }: ChatbotProps) {
                 >
                   {m.role !== "user" && (
                     <MessageAvatar
-                      src="/avatars/ai.png"
+                  src="/avatars/assistant-icon.gif"
                       alt="AI Assistant"
                       fallback="AI"
                     />
                   )}
-                  <div className="max-w-[85%] flex-1 sm:max-w-[75%]">
-                    {m.role !== "user" ? (
-                      <div className="bg-secondary text-foreground prose rounded-lg p-2">
-                        {/* Handle download progress parts first */}
-                        {m.parts
-                          ?.filter(
-                            (part: any) =>
-                              part.type === "data-modelDownloadProgress"
-                          )
-                          .map((part: any, partIndex: number) => {
-                            // Only show if message is not empty (hiding completed/cleared progress)
-                            if (!part.data?.message) return null;
 
-                            // Don't show the entire div when actively streaming
-                            if (status === "ready") return null;
+                  {m.role !== "user" ? (
+                    <div className="bg-secondary text-foreground prose rounded-lg p-2">
+                      {status === "submitted" &&
+                        m.id === streamingMessageId && (
+                          <Loader variant={"typing"} />
+                        )}
+
+                      {/* Always show content and copy buttons for messages with content */}
+                      {(
+                        <>
+                          {m.parts.map((part: any, partIndex: number) => {
+                            if (!part.data?.message) return null;
 
                             return (
                               <div key={partIndex}>
                                 <div className="flex items-center justify-between mb-2">
                                   <span className="flex items-center gap-1">
-                                    <Loader className="size-4" />
                                     {part.data.message}
                                   </span>
                                 </div>
@@ -1373,251 +1526,282 @@ export function Chatbot({ className }: ChatbotProps) {
                             );
                           })}
 
-                        {/* Handle file parts */}
-                        {m.parts
-                          ?.filter((part: any) => part.type === "file")
-                          .map((part: any, partIndex: number) => {
-                            if (part.mediaType?.startsWith("image/")) {
-                              return (
-                                <div key={partIndex} className="mt-2">
-                                  <img
-                                    src={part.url}
-                                    width={300}
-                                    height={300}
-                                    alt={part.filename || "Uploaded image"}
-                                    className="object-contain max-w-sm rounded-lg border"
-                                  />
-                                </div>
-                              );
-                            }
-
-                            if (part.mediaType?.startsWith("audio/")) {
-                              return (
-                                <div key={partIndex} className="mt-2">
-                                  <audio controls className="w-full max-w-sm">
-                                    <source
+                          {m.parts
+                            ?.filter((part: any) => part.type === "file")
+                            .map((part: any, partIndex: number) => {
+                              if (part.mediaType?.startsWith("image/")) {
+                                return (
+                                  <div key={partIndex} className="mt-2">
+                                    <img
                                       src={part.url}
-                                      type={part.mediaType}
+                                      width={300}
+                                      height={300}
+                                      alt={part.filename || "Uploaded image"}
+                                      className="object-contain max-w-sm rounded-lg border"
                                     />
-                                    Your browser does not support the audio
-                                    element.
-                                  </audio>
-                                  {part.filename && (
-                                    <p className="text-sm text-muted-foreground mt-1">
-                                      {part.filename}
-                                    </p>
-                                  )}
-                                </div>
-                              );
-                            }
+                                  </div>
+                                );
+                              }
 
-                            // Handle other file types
-                            return (
-                              <div key={partIndex} className="mt-2">
-                                <a
-                                  href={part.url}
-                                  download={part.filename}
-                                  className="text-blue-500 hover:underline"
-                                >
-                                  {part.filename || "Download file"}
-                                </a>
-                              </div>
-                            );
-                          })}
-
-                        {/* Handle text parts */}
-                        {m.parts
-                          ?.filter(
-                            (part: any) =>
-                              part.type === "text" && "text" in part
-                          )
-                          .map((part: any, partIndex: number) => {
-                            const textContent = String(
-                              (part as any).text || ""
-                            );
-                            return (
-                              <Markdown key={partIndex}>{textContent}</Markdown>
-                            );
-                          })}
-
-                        {/* Handle content when no parts exist */}
-                        {(!m.parts || m.parts.length === 0) &&
-                          (m as any).content &&
-                          (() => {
-                            const textContent = String(
-                              (m as any).content || ""
-                            );
-                            return <Markdown>{textContent}</Markdown>;
-                          })()}
-
-                        {/* Handle tool invocations */}
-                        {(m as any).toolInvocations && (m as any).toolInvocations.length > 0 && (
-                          <div className="mt-2">
-                            {(m as any).toolInvocations.map((invocation: any, invIndex: number) => {
-                              const toolPart: ToolPart = {
-                                type: invocation.toolName,
-                                state: invocation.state === "result" ? "output-available" : "input-available",
-                                input: invocation.args || {},
-                                output: invocation.result || {},
-                                toolCallId: invocation.toolCallId || `${invocation.toolName}-${invIndex}`,
-                              };
+                              if (part.mediaType?.startsWith("audio/")) {
+                                return (
+                                  <div key={partIndex} className="mt-2">
+                                    <audio controls className="w-full max-w-sm">
+                                      <source
+                                        src={part.url}
+                                        type={part.mediaType}
+                                      />
+                                      Your browser does not support the audio
+                                      element.
+                                    </audio>
+                                    {part.filename && (
+                                      <p className="text-sm text-muted-foreground mt-1">
+                                        {part.filename}
+                                      </p>
+                                    )}
+                                  </div>
+                                );
+                              }
 
                               return (
-                                <div key={invIndex} className="my-2">
-                                  <Tool
-                                    toolPart={toolPart}
-                                    defaultOpen={false}
-                                    className="w-full max-w-2xl transition-all duration-200 hover:shadow-md"
-                                  />
+                                <div key={partIndex} className="mt-2">
+                                  <a
+                                    href={part.url}
+                                    download={part.filename}
+                                    className="text-blue-500 hover:underline"
+                                  >
+                                    {part.filename || "Download file"}
+                                  </a>
                                 </div>
                               );
                             })}
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <MessageContent className="bg-primary text-primary-foreground">
-                        {/* Handle file parts for user messages */}
-                        {m.parts
-                          ?.filter((part: any) => part.type === "file")
-                          .map((part: any, partIndex: number) => {
-                            if (part.mediaType?.startsWith("image/")) {
-                              return (
-                                <div key={partIndex} className="mt-2">
-                                  <img
-                                    src={part.url}
-                                    width={300}
-                                    height={300}
-                                    alt={part.filename || "Uploaded image"}
-                                    className="object-contain max-w-sm rounded-lg border"
-                                  />
-                                </div>
-                              );
-                            }
 
-                            if (part.mediaType?.startsWith("audio/")) {
+                          {m.parts
+                            ?.filter(
+                              (part: any) =>
+                                part.type === "text" && "text" in part
+                            )
+                            .map((part: any, partIndex: number) => {
+                              const textContent = String(
+                                (part as any).text || ""
+                              ).trim();
                               return (
-                                <div key={partIndex} className="mt-2">
-                                  <audio controls className="w-full max-w-sm">
-                                    <source
-                                      src={part.url}
-                                      type={part.mediaType}
-                                    />
-                                    Your browser does not support the audio
-                                    element.
-                                  </audio>
-                                  {part.filename && (
-                                    <p className="text-sm text-muted-foreground mt-1">
-                                      {part.filename}
-                                    </p>
+                                <div key={partIndex} className="flex w-full flex-col gap-2">
+                                  <MessageContent markdown className="bg-transparent p-0">
+                                    {textContent}
+                                  </MessageContent>
+                                  
+                                  {!(status === "submitted" && m.id === streamingMessageId) && (
+                                    <MessageActions className="self-end">
+                                      <MessageAction tooltip="Copy to clipboard">
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-8 w-8 rounded-full cursor-pointer"
+                                          onClick={() => handleCopy(textContent, m.id)}
+                                        >
+                                          <Copy className={`size-4 ${copiedMessageIds.has(m.id) ? "text-green-500" : ""}`} />
+                                        </Button>
+                                      </MessageAction>
+                                    </MessageActions>
                                   )}
                                 </div>
                               );
-                            }
+                            })}
 
-                            // Handle other file types
+                          {(!m.parts || m.parts.length === 0) &&
+                            (m as any).content &&
+                            (() => {
+                              const textContent = String(
+                                (m as any).content || ""
+                              ).trim();
+                              return (
+                                <div className="flex w-full flex-col gap-2">
+                                  <MessageContent markdown className="bg-transparent p-0">
+                                    {textContent}
+                                  </MessageContent>
+                                  
+                                  {!(status === "submitted" && m.id === streamingMessageId) && (
+                                    <MessageActions className="self-end">
+                                      <MessageAction tooltip="Copy to clipboard">
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-8 w-8 rounded-full cursor-pointer"
+                                          onClick={() => handleCopy(textContent, m.id)}
+                                        >
+                                          <Copy className={`size-4 ${copiedMessageIds.has(m.id) ? "text-green-500" : ""}`} />
+                                        </Button>
+                                      </MessageAction>
+                                    </MessageActions>
+                                  )}
+                                </div>
+                              );
+                            })()}
+
+                          {(m as any).toolInvocations &&
+                            (m as any).toolInvocations.length > 0 && (
+                              <div className="mt-2">
+                                {(m as any).toolInvocations.map(
+                                  (invocation: any, invIndex: number) => {
+                                    const toolPart: ToolPart = {
+                                      type: invocation.toolName,
+                                      state:
+                                        invocation.state === "result"
+                                          ? "output-available"
+                                          : "input-available",
+                                      input: invocation.args || {},
+                                      output: invocation.result || {},
+                                      toolCallId:
+                                        invocation.toolCallId ||
+                                        `${invocation.toolName}-${invIndex}`,
+                                    };
+
+                                    return (
+                                      <div key={invIndex} className="my-2">
+                                        <Tool
+                                          toolPart={toolPart}
+                                          defaultOpen={false}
+                                          className="w-full max-w-2xl transition-all duration-200 hover:shadow-md"
+                                        />
+                                      </div>
+                                    );
+                                  }
+                                )}
+                              </div>
+                            )}
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    <MessageContent className="bg-primary text-primary-foreground">
+                      {/* Handle file parts for user messages */}
+                      {m.parts
+                        ?.filter((part: any) => part.type === "file")
+                        .map((part: any, partIndex: number) => {
+                          if (part.mediaType?.startsWith("image/")) {
                             return (
                               <div key={partIndex} className="mt-2">
-                                <a
-                                  href={part.url}
-                                  download={part.filename}
-                                  className="text-blue-500 hover:underline"
-                                >
-                                  {part.filename || "Download file"}
-                                </a>
+                                <img
+                                  src={part.url}
+                                  width={300}
+                                  height={300}
+                                  alt={part.filename || "Uploaded image"}
+                                  className="object-contain max-w-sm rounded-lg border"
+                                />
                               </div>
                             );
-                          })}
+                          }
 
-                        {/* Handle text parts for user messages */}
-                        {m.parts
-                          ?.filter(
-                            (part: any) =>
-                              part.type === "text" && "text" in part
-                          )
-                          .map((part: any, partIndex: number) => {
-                            const textContent = String(
-                              (part as any).text || ""
+                          if (part.mediaType?.startsWith("audio/")) {
+                            return (
+                              <div key={partIndex} className="mt-2">
+                                <audio controls className="w-full max-w-sm">
+                                  <source
+                                    src={part.url}
+                                    type={part.mediaType}
+                                  />
+                                  Your browser does not support the audio
+                                  element.
+                                </audio>
+                                {part.filename && (
+                                  <p className="text-sm text-muted-foreground mt-1">
+                                    {part.filename}
+                                  </p>
+                                )}
+                              </div>
                             );
-                            return <div key={partIndex}>{textContent}</div>;
-                          })}
+                          }
 
-                        {/* Handle content when no parts exist for user messages */}
-                        {(!m.parts || m.parts.length === 0) &&
-                          (m as any).content &&
-                          (() => {
-                            const textContent = String(
-                              (m as any).content || ""
-                            );
-                            return <div>{textContent}</div>;
-                          })()}
-                      </MessageContent>
+                          // Handle other file types
+                          return (
+                            <div key={partIndex} className="mt-2">
+                              <a
+                                href={part.url}
+                                download={part.filename}
+                                className="text-blue-500 hover:underline"
+                              >
+                                {part.filename || "Download file"}
+                              </a>
+                            </div>
+                          );
+                        })}
+
+                      {/* Handle text parts for user messages */}
+                      {m.parts
+                        ?.filter(
+                          (part: any) => part.type === "text" && "text" in part
+                        )
+                        .map((part: any, partIndex: number) => {
+                          const textContent = String((part as any).text || "");
+                          return <div key={partIndex}>{textContent}</div>;
+                        })}
+
+                      {/* Handle content when no parts exist for user messages */}
+                      {(!m.parts || m.parts.length === 0) &&
+                        (m as any).content &&
+                        (() => {
+                          const textContent = String((m as any).content || "");
+                          return <div>{textContent}</div>;
+                        })()}
+                    </MessageContent>
+                  )}
+
+                  {/* Action buttons for assistant messages */}
+                  {(m.role === "assistant" || m.role === "system") &&
+                    index === messages.length - 1 &&
+                    status === "ready" && (
+                      <div className="flex gap-1 mt-2">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            const textContent = m.parts
+                              ? m.parts
+                                  .filter(
+                                    (part: any) =>
+                                      part.type === "text" && "text" in part
+                                  )
+                                  .map((part: any) =>
+                                    String((part as any).text || "")
+                                  )
+                                  .join("\n")
+                                  .trim()
+                              : String((m as any).content || "").trim();
+                            navigator.clipboard.writeText(textContent);
+                            toast.success("Copied to clipboard!");
+                          }}
+                          className="text-muted-foreground hover:text-foreground h-4 w-4 [&_svg]:size-3.5"
+                        >
+                          <Copy />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => regenerate()}
+                          className="text-muted-foreground hover:text-foreground h-4 w-4 [&_svg]:size-3.5"
+                        >
+                          <RefreshCcw />
+                        </Button>
+                      </div>
                     )}
-
-                    {/* Action buttons for assistant messages */}
-                    {(m.role === "assistant" || m.role === "system") &&
-                      index === messages.length - 1 &&
-                      status === "ready" && (
-                        <div className="flex gap-1 mt-2">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => {
-                              const textContent = m.parts
-                                ? m.parts
-                                    .filter(
-                                      (part: any) =>
-                                        part.type === "text" && "text" in part
-                                    )
-                                    .map((part: any) =>
-                                      String((part as any).text || "")
-                                    )
-                                    .join("\n")
-                                : String((m as any).content || "");
-                              navigator.clipboard.writeText(textContent);
-                              toast.success("Copied to clipboard!");
-                            }}
-                            className="text-muted-foreground hover:text-foreground h-4 w-4 [&_svg]:size-3.5"
-                          >
-                            <Copy />
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => regenerate()}
-                            className="text-muted-foreground hover:text-foreground h-4 w-4 [&_svg]:size-3.5"
-                          >
-                            <RefreshCcw />
-                          </Button>
-                        </div>
-                      )}
-                  </div>
                 </Message>
               ))}
 
-              {/* Loading state */}
-              {status === "submitted" && (
-                <Message className="justify-start">
+              {status === "thinking" && (
+                <Message>
                   <MessageAvatar
-                    src="/avatars/ai.png"
+                  src="/avatars/ai.svg"
                     alt="AI Assistant"
                     fallback="AI"
                   />
-                  <div className="max-w-[85%] flex-1 sm:max-w-[75%]">
-                    <div className="bg-secondary text-foreground prose rounded-lg p-2">
-                      <div className="flex gap-1 items-center text-gray-500">
-                        <Loader className="size-4" />
-                        Thinking...
-                      </div>
-                    </div>
+                  <div className="bg-secondary text-black prose rounded-lg p-2">
+                    <Loader variant={"text-blink"} text="Thinking..." />
                   </div>
                 </Message>
               )}
-
-              {/* Streaming state */}
-              {status === "streaming" && <Loader variant={"typing"} />}
 
               {/* Error state */}
               {error && (
@@ -1636,15 +1820,42 @@ export function Chatbot({ className }: ChatbotProps) {
                 </div>
               )}
             </ChatContainerContent>
-            <div className="absolute right-12 bottom-4">
-              <ScrollButton />
-            </div>
           </ChatContainerRoot>
         </div>
       </div>
 
       {messages.length === 0 && (
         <>
+          <div className="flex flex-col items-center justify-center min-h-[60vh]">
+            <div className={`text-left w-full ${
+              selectedWallpaper && selectedWallpaper !== "default" 
+                ? "bg-gradient-to-r from-black/5 to-black/3 backdrop-blur-sm rounded-lg p-6" 
+                : ""
+            }`}>
+              <div className={`inline-flex items-center px-3 py-1 mb-6 text-sm font-medium rounded-md ${
+                selectedWallpaper && selectedWallpaper !== "default" 
+                  ? "text-white bg-black/20" 
+                  : "text-gray-700 bg-gray-100/50 border border-gray-200/50"
+              }`}>
+                Built with Chrome Built in AI and Firebase AI Logic
+              </div>
+              <h1 className={`text-7xl font-bold mb-2 ${
+                selectedWallpaper && selectedWallpaper !== "default" ? "text-white" : ""
+              }`}>
+                All your classes,
+              </h1>
+              <h2 className={`text-7xl font-bold mb-8 ${
+                selectedWallpaper && selectedWallpaper !== "default" ? "text-white" : ""
+              }`}>
+                perfectly organized.
+              </h2>
+              <p className={`text-lg max-w-3xl leading-relaxed ${
+                selectedWallpaper && selectedWallpaper !== "default" ? "text-white" : "text-gray-600"
+              }`}>
+                Built with Chrome's native AI capabilities and Gemini AI to automate timetable creation. Share your course plan with the AI, and it will intelligently arrange your classes and generate a balanced schedule. Two powerful AI systems working together to simplify your academic planning.
+              </p>
+            </div>
+          </div>
           <div className="flex flex-wrap gap-2 mb-4">
             <PromptSuggestion
               onClick={() => {
@@ -1666,11 +1877,11 @@ export function Chatbot({ className }: ChatbotProps) {
 
             <PromptSuggestion
               onClick={() => {
-                setInput("Generate an image of a cat");
+                setInput("Add course Mathematics");
                 setTimeout(() => handlePromptSubmit(), 0);
               }}
             >
-              Generate an image of a cat
+              Add course Mathematics
             </PromptSuggestion>
 
             <PromptSuggestion
@@ -1693,7 +1904,7 @@ export function Chatbot({ className }: ChatbotProps) {
         </>
       )}
 
-      <div className="border-t bg-background p-4">
+      <div className="border-t bg-background rounded-3xl">
         <div className="mx-auto max-w-3xl">
           <PromptInput
             value={input}
@@ -1702,48 +1913,10 @@ export function Chatbot({ className }: ChatbotProps) {
             onSubmit={handlePromptSubmit}
             className="w-full max-w-(--breakpoint-md)"
           >
-            {files && files.length > 0 && (
-              <div className="flex flex-wrap gap-2 pb-2">
-                {Array.from(files).map((file, index) => (
-                  <div
-                    key={index}
-                    className="bg-secondary flex items-center gap-2 rounded-lg px-3 py-2 text-sm"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <Paperclip className="size-4" />
-                    <span className="max-w-[120px] truncate">{file.name}</span>
-                    <button
-                      onClick={() => removeFile(index)}
-                      className="hover:bg-secondary/50 rounded-full p-1"
-                    >
-                      <X className="size-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
             <PromptInputTextarea placeholder="Ask me anything..." />
 
             <PromptInputActions className="flex items-center justify-between gap-2 pt-2">
               <div className="flex items-center gap-2">
-                <PromptInputAction tooltip="Attach files">
-                  <label
-                    htmlFor="file-upload"
-                    className="hover:bg-secondary-foreground/10 flex h-8 w-8 cursor-pointer items-center justify-center rounded-2xl"
-                  >
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      multiple
-                      onChange={handleFileChange}
-                      className="hidden"
-                      id="file-upload"
-                    />
-                    <Paperclip className="text-primary size-5" />
-                  </label>
-                </PromptInputAction>
-
                 <PromptInputAction tooltip="Chat History">
                   <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
                     <DialogTrigger asChild>
@@ -1806,18 +1979,27 @@ export function Chatbot({ className }: ChatbotProps) {
                                   </AlertDialogTrigger>
                                   <AlertDialogContent>
                                     <AlertDialogHeader>
-                                      <AlertDialogTitle>Delete Timetable</AlertDialogTitle>
+                                      <AlertDialogTitle>
+                                        Delete Timetable
+                                      </AlertDialogTitle>
                                       <AlertDialogDescription>
-                                        Are you sure you want to delete "{timetable.name}"? This action cannot be undone and will also delete all associated chats.
+                                        Are you sure you want to delete "
+                                        {timetable.name}"? This action cannot be
+                                        undone and will also delete all
+                                        associated chats.
                                       </AlertDialogDescription>
                                     </AlertDialogHeader>
                                     <AlertDialogFooter>
-                                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                      <AlertDialogCancel>
+                                        Cancel
+                                      </AlertDialogCancel>
                                       <AlertDialogAction
                                         className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                                         onClick={() => {
                                           deleteTimetable(timetable.id);
-                                          if (selectedTimetableId === timetable.id) {
+                                          if (
+                                            selectedTimetableId === timetable.id
+                                          ) {
                                             setSelectedTimetableId(null);
                                           }
                                         }}
@@ -1871,7 +2053,9 @@ export function Chatbot({ className }: ChatbotProps) {
                                         <button
                                           onClick={() => {
                                             loadChatMessages(chat.id);
-                                            setActiveTimetable(chat.timetableId);
+                                            setActiveTimetable(
+                                              chat.timetableId
+                                            );
                                             setDialogOpen(false);
                                           }}
                                           className="w-full text-left cursor-pointer"
@@ -1882,7 +2066,9 @@ export function Chatbot({ className }: ChatbotProps) {
                                           <div className="flex justify-between items-start mb-2 pr-8">
                                             <h4
                                               className={`font-medium text-sm ${
-                                                isActiveChat ? "text-primary" : ""
+                                                isActiveChat
+                                                  ? "text-primary"
+                                                  : ""
                                               }`}
                                             >
                                               {chat.name}
@@ -1898,79 +2084,88 @@ export function Chatbot({ className }: ChatbotProps) {
                                               ).toLocaleDateString()}
                                             </span>
                                           </div>
-                                        <div className="text-sm text-muted-foreground">
-                                          {chat.messages.length} messages
-                                        </div>
-                                        {chat.messages.length > 0 && (
-                                          <div className="mt-2 text-xs text-muted-foreground line-clamp-2">
-                                            Last:{" "}
-                                            {(() => {
-                                              const lastMessage =
-                                                chat.messages[
-                                                  chat.messages.length - 1
-                                                ];
-                                              if (!lastMessage)
-                                                return "No content";
-
-                                              const textParts =
-                                                lastMessage.parts?.filter(
-                                                  (part: any) =>
-                                                    part.type === "text" &&
-                                                    "text" in part
-                                                );
-                                              if (
-                                                textParts &&
-                                                textParts.length > 0
-                                              ) {
-                                                return (
-                                                  (textParts[0] as any).text ||
-                                                  "No content"
-                                                );
-                                              }
-
-                                              return (
-                                                (lastMessage as any).content ||
-                                                "No content"
-                                              );
-                                            })()}
+                                          <div className="text-sm text-muted-foreground">
+                                            {chat.messages.length} messages
                                           </div>
-                                        )}
-                                      </button>
-                                      <AlertDialog>
-                                        <AlertDialogTrigger asChild>
-                                          <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="absolute top-2 right-2 h-6 w-6 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-                                            onClick={(e) => e.stopPropagation()}
-                                          >
-                                            <Trash2 className="h-3 w-3" />
-                                          </Button>
-                                        </AlertDialogTrigger>
-                                        <AlertDialogContent>
-                                          <AlertDialogHeader>
-                                            <AlertDialogTitle>Delete Chat</AlertDialogTitle>
-                                            <AlertDialogDescription>
-                                              Are you sure you want to delete this chat? This action cannot be undone.
-                                            </AlertDialogDescription>
-                                          </AlertDialogHeader>
-                                          <AlertDialogFooter>
-                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                            <AlertDialogAction
-                                              onClick={() => {
-                                                const { deleteChat } = useChatStore.getState();
-                                                deleteChat(chat.id);
-                                              }}
-                                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                          {chat.messages.length > 0 && (
+                                            <div className="mt-2 text-xs text-muted-foreground line-clamp-2">
+                                              Last:{" "}
+                                              {(() => {
+                                                const lastMessage =
+                                                  chat.messages[
+                                                    chat.messages.length - 1
+                                                  ];
+                                                if (!lastMessage)
+                                                  return "No content";
+
+                                                const textParts =
+                                                  lastMessage.parts?.filter(
+                                                    (part: any) =>
+                                                      part.type === "text" &&
+                                                      "text" in part
+                                                  );
+                                                if (
+                                                  textParts &&
+                                                  textParts.length > 0
+                                                ) {
+                                                  return (
+                                                    (textParts[0] as any)
+                                                      .text || "No content"
+                                                  );
+                                                }
+
+                                                return (
+                                                  (lastMessage as any)
+                                                    .content || "No content"
+                                                );
+                                              })()}
+                                            </div>
+                                          )}
+                                        </button>
+                                        <AlertDialog>
+                                          <AlertDialogTrigger asChild>
+                                            <Button
+                                              variant="ghost"
+                                              size="icon"
+                                              className="absolute top-2 right-2 h-6 w-6 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                                              onClick={(e) =>
+                                                e.stopPropagation()
+                                              }
                                             >
-                                              Delete
-                                            </AlertDialogAction>
-                                          </AlertDialogFooter>
-                                        </AlertDialogContent>
-                                      </AlertDialog>
-                                    </div>
-                                  );
-                                })}
+                                              <Trash2 className="h-3 w-3" />
+                                            </Button>
+                                          </AlertDialogTrigger>
+                                          <AlertDialogContent>
+                                            <AlertDialogHeader>
+                                              <AlertDialogTitle>
+                                                Delete Chat
+                                              </AlertDialogTitle>
+                                              <AlertDialogDescription>
+                                                Are you sure you want to delete
+                                                this chat? This action cannot be
+                                                undone.
+                                              </AlertDialogDescription>
+                                            </AlertDialogHeader>
+                                            <AlertDialogFooter>
+                                              <AlertDialogCancel>
+                                                Cancel
+                                              </AlertDialogCancel>
+                                              <AlertDialogAction
+                                                onClick={() => {
+                                                  const { deleteChat } =
+                                                    useChatStore.getState();
+                                                  deleteChat(chat.id);
+                                                }}
+                                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                              >
+                                                Delete
+                                              </AlertDialogAction>
+                                            </AlertDialogFooter>
+                                          </AlertDialogContent>
+                                        </AlertDialog>
+                                      </div>
+                                    );
+                                  })}
                                 {chats.filter(
                                   (chat) =>
                                     chat.timetableId === selectedTimetableId
@@ -2022,8 +2217,7 @@ export function Chatbot({ className }: ChatbotProps) {
                   onClick={isGenerating ? stop : handleSubmit}
                   disabled={
                     !isGenerating &&
-                    (!input || !input.trim()) &&
-                    (!files || files.length === 0)
+                    (!input || !input.trim())
                   }
                 >
                   {isGenerating ? (

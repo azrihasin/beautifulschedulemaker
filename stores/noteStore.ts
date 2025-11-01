@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { persist, createJSONStorage } from "zustand/middleware";
+import { noteIndexedDBStorage } from '../lib/note-indexeddb-storage';
 
 import type { 
   Note, 
@@ -24,42 +24,10 @@ const createEmptyContent = (): JSONContent => ({
   content: []
 });
 
-// Serialization helpers for Date objects
-const serializeState = (state: any) => {
-  return {
-    ...state,
-    notes: (state.notes || []).map((n: Note) => ({
-      ...n,
-      createdAt: n.createdAt instanceof Date ? n.createdAt.toISOString() : n.createdAt,
-      updatedAt: n.updatedAt instanceof Date ? n.updatedAt.toISOString() : n.updatedAt
-    })),
-    currentNote: state.currentNote ? {
-      ...state.currentNote,
-      createdAt: state.currentNote.createdAt instanceof Date ? state.currentNote.createdAt.toISOString() : state.currentNote.createdAt,
-      updatedAt: state.currentNote.updatedAt instanceof Date ? state.currentNote.updatedAt.toISOString() : state.currentNote.updatedAt
-    } : null
-  };
-};
 
-const deserializeState = (state: any) => {
-  return {
-    ...state,
-    notes: (state.notes || []).map((n: any) => ({
-      ...n,
-      createdAt: new Date(n.createdAt),
-      updatedAt: new Date(n.updatedAt)
-    })),
-    currentNote: state.currentNote ? {
-      ...state.currentNote,
-      createdAt: new Date(state.currentNote.createdAt),
-      updatedAt: new Date(state.currentNote.updatedAt)
-    } : null
-  };
-};
 
 export const useNoteStore = create<NoteStore>()(
-  isBrowser ? persist(
-    (set, get) => ({
+  (set, get) => ({
       notes: [],
       currentNote: null,
       currentContext: null,
@@ -78,43 +46,55 @@ export const useNoteStore = create<NoteStore>()(
       },
 
       // Get notes organized hierarchically
-      getOrganizedNotes: (timetableId: string) => {
-        const notes = get().notes.filter(note => note.timetableId === timetableId);
-        
-        // Separate notes by type and sort by pinned status and update time
-        const timetableNotes = notes
-          .filter(note => note.courseId === undefined && note.sessionId === undefined)
-          .sort((a, b) => {
-            if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
-            return b.updatedAt.getTime() - a.updatedAt.getTime();
-          });
+      getOrganizedNotes: async (timetableId: string) => {
+        try {
+          const notes = await noteIndexedDBStorage.getNotesByTimetable(timetableId);
+          
+          // Separate notes by type and sort by pinned status and update time
+          const timetableNotes = notes
+            .filter(note => note.courseId === undefined && note.sessionId === undefined)
+            .sort((a, b) => {
+              if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+              return b.updatedAt.getTime() - a.updatedAt.getTime();
+            });
 
-        const courseNotes = notes
-          .filter(note => note.courseId !== undefined && note.sessionId === undefined)
-          .sort((a, b) => {
-            if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
-            return b.updatedAt.getTime() - a.updatedAt.getTime();
-          });
+          const courseNotes = notes
+            .filter(note => note.courseId !== undefined && note.sessionId === undefined)
+            .sort((a, b) => {
+              if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+              return b.updatedAt.getTime() - a.updatedAt.getTime();
+            });
 
-        const sessionNotes = notes
-          .filter(note => note.sessionId !== undefined)
-          .sort((a, b) => {
-            if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
-            return b.updatedAt.getTime() - a.updatedAt.getTime();
-          });
+          const sessionNotes = notes
+            .filter(note => note.sessionId !== undefined)
+            .sort((a, b) => {
+              if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+              return b.updatedAt.getTime() - a.updatedAt.getTime();
+            });
 
-        return {
-          timetable: timetableNotes,
-          course: courseNotes,
-          session: sessionNotes
-        };
+          return {
+            timetable: timetableNotes,
+            course: courseNotes,
+            session: sessionNotes
+          };
+        } catch (error) {
+          console.error('Failed to get organized notes:', error);
+          return {
+            timetable: [],
+            course: [],
+            session: []
+          };
+        }
       },
 
       // Get pinned notes for quick access
-      getPinnedNotes: (timetableId: string) => {
-        return get().notes
-          .filter(note => note.timetableId === timetableId && note.isPinned)
-          .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+      getPinnedNotes: async (timetableId: string) => {
+        try {
+          return await noteIndexedDBStorage.getPinnedNotes(timetableId);
+        } catch (error) {
+          console.error('Failed to get pinned notes:', error);
+          return [];
+        }
       },
 
       // Toggle pin status
@@ -126,26 +106,21 @@ export const useNoteStore = create<NoteStore>()(
       },
 
       loadNote: async (context: NoteContext): Promise<Note> => {
-        const { notes } = get();
         set({ isLoading: true, error: null, currentContext: context });
 
         try {
-          // Find existing note based on context
-          const existingNote = notes.find(note => 
-            note.timetableId === context.timetableId &&
-            note.courseId === context.courseId &&
-            note.sessionId === context.sessionId
-          );
+          // Find existing note based on context using IndexedDB
+          const existingNotes = await noteIndexedDBStorage.getNotesByContext(context);
 
           let note: Note;
 
-          if (existingNote) {
-            note = existingNote;
+          if (existingNotes.length > 0) {
+            note = existingNotes[0];
           } else {
-            // Create a new note locally
+            // Create a new note using IndexedDB
             note = {
               id: generateId(),
-              userId: 'local-user', // Since we don't have auth, use a placeholder
+              userId: 'local-user',
               timetableId: context.timetableId,
               courseId: context.courseId,
               sessionId: context.sessionId,
@@ -156,16 +131,14 @@ export const useNoteStore = create<NoteStore>()(
               updatedAt: new Date(),
             };
 
-            // Add to local state
-            set(state => ({
-              notes: [...state.notes, note],
-              currentNote: note,
-              currentContext: context,
-              isLoading: false
-            }));
+            // Save to IndexedDB and get the created note
+            note = await noteIndexedDBStorage.createNote(note);
           }
 
+          // Update local state
+          const allNotes = await noteIndexedDBStorage.getAllNotes();
           set({
+            notes: allNotes,
             currentNote: note,
             currentContext: context,
             isLoading: false
@@ -195,11 +168,15 @@ export const useNoteStore = create<NoteStore>()(
             updatedAt: new Date()
           };
 
+          // Save to IndexedDB
+          await noteIndexedDBStorage.updateNote(currentNote.id, updatedNote);
+
           // Update local state
-          set((state) => ({
-            notes: state.notes.map(n => n.id === updatedNote.id ? updatedNote : n),
+          const allNotes = await noteIndexedDBStorage.getAllNotes();
+          set({
+            notes: allNotes,
             currentNote: updatedNote
-          }));
+          });
         } catch (error) {
           console.error('Failed to save note:', error);
           const errorMessage = error instanceof Error ? error.message : 'Failed to save note';
@@ -212,11 +189,16 @@ export const useNoteStore = create<NoteStore>()(
         set({ error: null });
         
         try {
+          // Delete from IndexedDB
+          await noteIndexedDBStorage.deleteNote(id);
+
           // Update local state
-          set((state) => ({
-            notes: state.notes.filter(n => n.id !== id),
-            currentNote: state.currentNote?.id === id ? null : state.currentNote
-          }));
+          const allNotes = await noteIndexedDBStorage.getAllNotes();
+          const currentNote = get().currentNote;
+          set({
+            notes: allNotes,
+            currentNote: currentNote?.id === id ? null : currentNote
+          });
         } catch (error) {
           console.error('Failed to delete note:', error);
           const errorMessage = error instanceof Error ? error.message : 'Failed to delete note';
@@ -262,13 +244,9 @@ export const useNoteStore = create<NoteStore>()(
 
       getNotesForAI: async (query: string): Promise<Note[]> => {
         try {
-          const { notes } = get();
-          // Simple text search in local notes
-          const filteredNotes = notes.filter(note => {
-            const contentText = JSON.stringify(note.content).toLowerCase();
-            return contentText.includes(query.toLowerCase());
-          });
-          return filteredNotes.slice(0, 10); // Limit to 10 results
+          // Use IndexedDB search functionality
+          const searchResults = await noteIndexedDBStorage.searchNotes(query);
+          return searchResults;
         } catch (error) {
           console.error('Failed to get notes for AI:', error);
           return [];
@@ -291,74 +269,5 @@ export const useNoteStore = create<NoteStore>()(
         // No-op for local storage
         console.log('Local storage - no retry needed');
       },
-    }),
-    {
-      name: 'note-store',
-      storage: createJSONStorage(() => ({
-        getItem: (name: string) => {
-          try {
-            const item = localStorage.getItem(name);
-            if (!item) return null;
-            try {
-              const parsed = JSON.parse(item);
-              return JSON.stringify({ state: deserializeState(parsed.state) });
-            } catch {
-              return item;
-            }
-          } catch (error) {
-            console.warn('Failed to get item from localStorage:', error);
-            return null;
-          }
-        },
-        setItem: (name: string, value: string) => {
-          try {
-            const parsed = JSON.parse(value);
-            const serialized = JSON.stringify({ state: serializeState(parsed.state) });
-            localStorage.setItem(name, serialized);
-          } catch (error) {
-            console.warn('Failed to set item in localStorage:', error);
-            try {
-              localStorage.setItem(name, value);
-            } catch {
-              // Silently fail if localStorage is not available
-            }
-          }
-        },
-        removeItem: (name: string) => {
-          try {
-            localStorage.removeItem(name);
-          } catch (error) {
-            console.warn('Failed to remove item from localStorage:', error);
-          }
-        }
-      })),
-      partialize: (state) => ({
-        notes: state.notes,
-        currentNote: state.currentNote,
-        currentContext: state.currentContext,
-        // Don't persist loading states and errors
-      }),
-    }
-  ) : (set, get) => ({
-    notes: [],
-    currentNote: null,
-    currentContext: null,
-    isLoading: false,
-    error: null,
-    setError: (error: string | null) => set({ error }),
-    clearError: () => set({ error: null }),
-    setCurrentContext: () => {},
-    getCurrentNote: () => null,
-    getOrganizedNotes: () => ({ timetable: [], course: [], session: [] }),
-    getPinnedNotes: () => [],
-    togglePin: async (): Promise<void> => { throw new Error('Not available in SSR'); },
-    loadNote: async (): Promise<Note> => { throw new Error('Not available in SSR'); },
-    saveNote: async (): Promise<void> => { throw new Error('Not available in SSR'); },
-    deleteNote: async (): Promise<void> => { throw new Error('Not available in SSR'); },
-    saveFromChat: async (): Promise<void> => { throw new Error('Not available in SSR'); },
-    getNotesForAI: async (): Promise<Note[]> => { throw new Error('Not available in SSR'); },
-    syncOfflineChanges: async (): Promise<void> => { throw new Error('Not available in SSR'); },
-    checkConnectivity: async (): Promise<boolean> => { throw new Error('Not available in SSR'); },
-    retryFailedOperations: async (): Promise<void> => { throw new Error('Not available in SSR'); },
-  })
+    })
 );

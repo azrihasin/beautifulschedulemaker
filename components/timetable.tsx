@@ -109,12 +109,16 @@ const Timetable = () => {
     courseName,
     time,
     days,
-    backgroundImage,
-    backgroundSize,
-    backgroundPositionX,
-    backgroundPositionY,
-    backgroundRotation,
   } = useSettingsStore();
+
+  const { getActiveTimetableBackground } = useTimetableStore();
+  const timetableBackground = getActiveTimetableBackground();
+  
+  const backgroundImage = timetableBackground?.backgroundImage || null;
+  const backgroundSize = timetableBackground?.backgroundSize || 300;
+  const backgroundPositionX = timetableBackground?.backgroundPositionX || 50;
+  const backgroundPositionY = timetableBackground?.backgroundPositionY || 50;
+  const backgroundRotation = timetableBackground?.backgroundRotation || 0;
 
   const abbreviationFormats = {
     full: {
@@ -282,7 +286,7 @@ const Timetable = () => {
           setSelectedCourseIndex(combinedCourse.id);
           setIsCourseDialogOpen(true);
         }}
-        className={`absolute inset-0 text-white overflow-hidden cursor-pointer transition-all duration-200 ease-out hover:opacity-90 hover:scale-[1.02] flex flex-col justify-center items-center text-center ${
+        className={`absolute inset-0 text-white overflow-hidden cursor-pointer flex flex-col justify-center items-center text-center ${
           isNewlyAdded 
             ? 'animate-[fadeInScale_0.3s_cubic-bezier(0.16,1,0.3,1)_forwards] opacity-0' 
             : 'opacity-100'
@@ -442,15 +446,23 @@ const Timetable = () => {
 
   return (
     <>
+      {/* Wrapper with white outline - not captured in screenshots */}
       <div
-        ref={timetableRef}
-        data-timetable="true"
-        className="w-full h-full bg-white shadow-lg overflow-hidden"
+        className="w-full h-full rounded-xl"
         style={{
-          position: "relative",
-          overflow: "hidden",
+          border: "5px solid white",
+          padding: "0",
         }}
       >
+        <div
+          ref={timetableRef}
+          data-timetable="true"
+          className="w-full h-full bg-white shadow-lg overflow-hidden"
+          style={{
+            position: "relative",
+            overflow: "hidden",
+          }}
+        >
         {/* Background Image Layer */}
         {backgroundImage && (
           <div
@@ -591,6 +603,7 @@ const Timetable = () => {
           }}
           courseId={selectedCourseIndex}
         />
+        </div>
       </div>
     </>
   );

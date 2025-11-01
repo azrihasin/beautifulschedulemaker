@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { z } from "zod";
 import { backgroundImageStorage } from "../lib/indexeddb-storage";
+import { safeLocalStorage } from "../lib/safe-local-storage";
 
 // Action definitions following the tool pattern
 const settingsActions = {
@@ -125,6 +126,8 @@ interface SettingsState {
   backgroundPositionY: number;
   backgroundRotation: number;
   isCustomizingWallpaper: boolean;
+  selectedWallpaper: string;
+  websiteBackgroundImage: string;
   // Action methods following the tool pattern
   executeAction: (actionName: string, params: any) => Promise<any>;
   // Legacy methods for backward compatibility
@@ -197,6 +200,8 @@ interface SettingsState {
   setBackgroundPositionY: (y: number) => void;
   setBackgroundRotation: (rotation: number) => void;
   setIsCustomizingWallpaper: (isCustomizingWallpaper: boolean) => void;
+  setSelectedWallpaper: (wallpaper: string) => void;
+  setWebsiteBackgroundImage: (image: string) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -210,12 +215,14 @@ export const useSettingsStore = create<SettingsState>()(
       hideCourseName: false,
       hideTime: false,
       hideDays: false,
-      backgroundImage: "/sky-evening.jpg",
+      backgroundImage: "/wallpaper.jpeg",
       backgroundSize: 300,
       backgroundPositionX: 50,
       backgroundPositionY: 50,
       backgroundRotation: 0,
       isCustomizingWallpaper: false,
+      selectedWallpaper: "wallpaper",
+      websiteBackgroundImage: "/wallpaper.jpeg",
       courseCode: {
         fontFamily: "Geist Sans",
         fontSize: 9,
@@ -564,11 +571,12 @@ export const useSettingsStore = create<SettingsState>()(
         const { executeAction } = get();
         executeAction('setBackgroundSettings', { backgroundRotation });
       },
+      setSelectedWallpaper: (selectedWallpaper: string) => set({ selectedWallpaper }),
+      setWebsiteBackgroundImage: (websiteBackgroundImage: string) => set({ websiteBackgroundImage }),
     }),
     {
       name: 'timetable-settings',
-      storage: createJSONStorage(() => localStorage),
-      // Background image now stored directly in localStorage via persist middleware
+      storage: createJSONStorage(() => safeLocalStorage),
     }
   )
 );

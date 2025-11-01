@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from "react";
 import Timetable from "@/components/timetable";
 import CourseDialog from "@/components/course-dialog";
 import { useCourseStore } from "@/stores/courseStore";
+import { useMounted } from "@/hooks/use-mounted";
 
 import { Card, CardContent } from "@/components/ui/card";
 import AddJsonDialog from "@/components/add-json-dialog";
@@ -21,8 +22,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ChevronDownIcon, Calendar, FileText, Smartphone } from "lucide-react";
+import { ChevronDownIcon, Calendar, FileText, Smartphone, ImageIcon, Download, Settings } from "lucide-react";
 import { Chatbot } from "@/components/chatbot";
+import { WallpaperSelectionButton } from "@/components/wallpaper-selection-dialog";
 import { cn } from "@/lib/utils";
 import { useTimetableStore } from "@/stores/timetableStore";
 import { ErrorBoundary } from "@/components/error-boundary";
@@ -256,6 +258,7 @@ const deviceModels = [
   },
 ];
 export default function Home() {
+  const isMounted = useMounted();
   const courses = useCourseStore((state) => state.courses);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isJsonDialogOpen, setIsJsonDialogOpen] = useState(false);
@@ -271,7 +274,6 @@ export default function Home() {
     useState(false);
   const [useChatInterface, setUseChatInterface] = useState(true);
 
-
   type ViewMode = "timetable" | "note-list" | "note-editor";
   const [currentView, setCurrentView] = useState<ViewMode>("timetable");
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
@@ -281,6 +283,7 @@ export default function Home() {
   );
   const [isAiStreaming, setIsAiStreaming] = useState(false);
   const [aiResponse, setAiResponse] = useState("");
+  const { selectedWallpaper, websiteBackgroundImage, setSelectedWallpaper, setWebsiteBackgroundImage } = useSettingsStore();
 
   const { loadNotes, createNote, updateNote } = useExcalidrawNoteStore();
 
@@ -322,6 +325,12 @@ export default function Home() {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [currentView, activeTab]);
+
+  useEffect(() => {
+    if (selectedWallpaper && !websiteBackgroundImage) {
+      setWebsiteBackgroundImage(`/${selectedWallpaper}.jpg`);
+    }
+  }, [selectedWallpaper, websiteBackgroundImage, setWebsiteBackgroundImage]);
 
   const handleTransitionToNoteList = () => {
     setActiveTab("note-list");
@@ -366,12 +375,14 @@ export default function Home() {
         return;
       }
 
-      let savedNote;
       let savedNoteId;
 
       if (selectedNoteId) {
-        savedNote = await updateNote(selectedNoteId, title.trim(), sceneData);
-        savedNoteId = savedNote?.id || selectedNoteId;
+        await updateNote(selectedNoteId, { 
+          title: title.trim(), 
+          scene_data: sceneData 
+        });
+        savedNoteId = selectedNoteId;
       } else {
         const newNoteId = await createNote(
           title.trim(),
@@ -380,11 +391,10 @@ export default function Home() {
         if (newNoteId) {
           setSelectedNoteId(newNoteId);
           savedNoteId = newNoteId;
-          savedNote = { id: newNoteId };
         }
       }
 
-      if (savedNote || savedNoteId) {
+      if (savedNoteId) {
         try {
           await handleLoadNotes();
         } catch (loadError) {
@@ -493,8 +503,24 @@ export default function Home() {
     }
   };
 
+  if (!isMounted) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="flex items-center space-x-2 text-gray-600">
+          <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+          <span className="text-sm">Loading...</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div>
+    <div 
+      className="min-h-screen bg-cover bg-center bg-no-repeat transition-all duration-500"
+      style={{
+        backgroundImage: websiteBackgroundImage ? `url(${websiteBackgroundImage})` : 'none'
+      }}
+    >
       <div className="h-screen">
         <div className="flex flex-col lg:flex-row h-full">
           <ResizablePanelGroup
@@ -516,7 +542,7 @@ export default function Home() {
                         : "text-gray-600 hover:text-gray-900"
                     )}
                   >
-                    💬 Chat
+                    🤖 AI Chat
                   </button>
                   <button
                     onClick={() => setUseChatInterface(false)}
@@ -527,7 +553,7 @@ export default function Home() {
                         : "text-gray-600 hover:text-gray-900"
                     )}
                   >
-                    🔘 Buttons
+                    🕹️ Manual Mode
                   </button>
                 </div>
               </div>
@@ -745,6 +771,50 @@ export default function Home() {
                 >
                   <div className="w-full flex items-center justify-end px-4 sm:px-0">
                     <TabsList className="bg-transparent p-0 h-auto text-sm sm:text-sm flex items-center gap-2">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button 
+                            onClick={() => setSettingsMode(true)}
+                            className="bg-transparent shadow-none rounded-md px-3 py-2 text-sm sm:text-sm cursor-pointer hover:bg-accent/50 transition-all duration-200 flex items-center justify-center"
+                          >
+                            <Settings className="h-4 w-4 transition-all duration-200" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Settings</p>
+                        </TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button 
+                            onClick={() => handleScreenshot("jpeg")}
+                            className="bg-transparent shadow-none rounded-md px-3 py-2 text-sm sm:text-sm cursor-pointer hover:bg-accent/50 transition-all duration-200 flex items-center justify-center"
+                          >
+                            <Download className="h-4 w-4 transition-all duration-200" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Download JPEG</p>
+                        </TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <WallpaperSelectionButton
+                            onWallpaperSelect={(wallpaper) => {
+                               setSelectedWallpaper(wallpaper.id);
+                               setWebsiteBackgroundImage(wallpaper.path);
+                             }}
+                            selectedWallpaper={selectedWallpaper}
+                          >
+                            <button className="bg-transparent shadow-none rounded-md px-3 py-2 text-sm sm:text-sm cursor-pointer hover:bg-accent/50 transition-all duration-200 flex items-center justify-center">
+                              <ImageIcon className="h-4 w-4 transition-all duration-200" />
+                            </button>
+                          </WallpaperSelectionButton>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Wallpaper</p>
+                        </TooltipContent>
+                      </Tooltip>
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <TabsTrigger

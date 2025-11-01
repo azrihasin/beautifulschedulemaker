@@ -17,6 +17,16 @@ import {
   detectChanges,
   type ChangeDetectionState 
 } from '@/lib/change-detection';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 // Import Excalidraw CSS for proper rendering in Next.js
 import '@excalidraw/excalidraw/index.css';
@@ -128,10 +138,15 @@ export function ExcalidrawNoteEditor({
   const [sceneData, setSceneData] = useState<ExcalidrawScene>(createEmptyScene());
   const [noteTitle, setNoteTitle] = useState('Untitled Note');
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [changeDetectionState, setChangeDetectionState] = useState<ChangeDetectionState>(
     createChangeDetectionState('Untitled Note', null, createEmptyScene())
   );
+  const [isUserInteracting, setIsUserInteracting] = useState(false);
+  const [isSystemUpdate, setIsSystemUpdate] = useState(false);
 
   // Memoized Excalidraw configuration
   const excalidrawConfig = useMemo(() => ({
@@ -156,7 +171,7 @@ export function ExcalidrawNoteEditor({
   }), []);
 
   // Access the store
-  const { loadNote, currentNote } = useExcalidrawNoteStore();
+  const { loadNote, currentNote, deleteNote } : any = useExcalidrawNoteStore();
 
   // Load note data when component mounts or noteId changes
   useEffect(() => {
@@ -188,9 +203,11 @@ export function ExcalidrawNoteEditor({
 
   // Update local state when currentNote changes
   useEffect(() => {
+    setIsSystemUpdate(true);
+    
     if (currentNote && noteId) {
       const title = currentNote.title;
-      const scene = currentNote.excalidraw_data || createEmptyScene();
+      const scene = currentNote.scene_data || createEmptyScene();
       
       setNoteTitle(title);
       setSceneData(scene);
@@ -211,6 +228,11 @@ export function ExcalidrawNoteEditor({
       setChangeDetectionState(newChangeState);
       setHasUnsavedChanges(false);
     }
+    
+    // Reset system update flag after a short delay to allow Excalidraw to settle
+    setTimeout(() => {
+      setIsSystemUpdate(false);
+    }, 100);
   }, [currentNote, noteId]);
 
   // Handle Excalidraw scene changes
@@ -221,16 +243,22 @@ export function ExcalidrawNoteEditor({
     if (validateSceneData(newSceneData)) {
       setSceneData(newSceneData);
       
-      // Check if there are actual changes compared to the original state
-      const hasChanges = detectChanges(
-        changeDetectionState,
-        noteTitle,
-        undefined, // no content for Excalidraw editor
-        newSceneData
-      );
-      setHasUnsavedChanges(hasChanges);
+      // Only check for changes if this is not a system update and user is interacting
+      if (!isSystemUpdate && isUserInteracting) {
+        // Debounce the change detection to avoid rapid updates
+        setTimeout(() => {
+          // Check if there are actual changes compared to the original state
+          const hasChanges = detectChanges(
+            changeDetectionState,
+            noteTitle,
+            undefined, // no content for Excalidraw editor
+            newSceneData
+          );
+          setHasUnsavedChanges(hasChanges);
+        }, 300);
+      }
     }
-  }, [changeDetectionState, noteTitle]);
+  }, [changeDetectionState, noteTitle, isSystemUpdate, isUserInteracting]);
 
   // Handle save operation
   const handleSave = useCallback(async () => {
@@ -273,13 +301,48 @@ export function ExcalidrawNoteEditor({
   // Handle back navigation with unsaved changes warning
   const handleBack = useCallback(() => {
     if (hasUnsavedChanges) {
-      const shouldDiscard = window.confirm(
-        'You have unsaved changes. Are you sure you want to go back? Your changes will be lost.'
-      );
-      if (!shouldDiscard) return;
+      setShowUnsavedDialog(true);
+      return;
     }
     onBack();
   }, [hasUnsavedChanges, onBack]);
+
+  // Handle discard changes
+  const handleDiscardChanges = useCallback(() => {
+    setShowUnsavedDialog(false);
+    onBack();
+  }, [onBack]);
+  
+  // Handle cancel discard
+  const handleCancelDiscard = useCallback(() => {
+    setShowUnsavedDialog(false);
+  }, []);
+
+  // Handle delete note
+  const handleDelete = useCallback(() => {
+    setShowDeleteDialog(true);
+  }, []);
+
+  // Handle confirm delete
+  const handleConfirmDelete = useCallback(async () => {
+    if (!noteId) return;
+    
+    try {
+      setIsDeleting(true);
+      await deleteNote(noteId);
+      setShowDeleteDialog(false);
+      onBack();
+    } catch (error) {
+      console.error('Failed to delete note:', error);
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [noteId, deleteNote, onBack]);
+
+  // Handle cancel delete
+  const handleCancelDelete = useCallback(() => {
+    setShowDeleteDialog(false);
+  }, []);
 
 
 
@@ -339,12 +402,21 @@ export function ExcalidrawNoteEditor({
           onSave={handleSave}
           isSaving={isSaving}
           hasUnsavedChanges={hasUnsavedChanges}
+          onDelete={handleDelete}
+          isDeleting={isDeleting}
+          canDelete={!!noteId}
           className="flex-1"
         />
       </div>
 
       {/* Excalidraw Canvas */}
-      <div className="flex-1 w-full overflow-hidden bg-white p-4">
+      <div 
+        className="flex-1 w-full overflow-hidden bg-white p-4"
+        onPointerDown={() => setIsUserInteracting(true)}
+        onPointerUp={() => setTimeout(() => setIsUserInteracting(false), 100)}
+        onKeyDown={() => setIsUserInteracting(true)}
+        onKeyUp={() => setTimeout(() => setIsUserInteracting(false), 100)}
+      >
         {isLoading ? (
           <ExcalidrawSkeleton />
         ) : hasError ? (
@@ -382,6 +454,57 @@ export function ExcalidrawNoteEditor({
           </div>
         </div>
       )}
+
+      {/* Unsaved Changes Dialog */}
+      <AlertDialog open={showUnsavedDialog} onOpenChange={setShowUnsavedDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have unsaved changes. Are you sure you want to go back? Your changes will be lost.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleCancelDiscard}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={handleDiscardChanges} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Discard Changes
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Note</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this note? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleCancelDelete} disabled={isDeleting}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleConfirmDelete} 
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                'Delete'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 

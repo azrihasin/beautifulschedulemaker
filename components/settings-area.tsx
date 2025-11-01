@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useTimetableStore } from "@/stores/timetableStore";
 import {
   Select,
   SelectTrigger,
@@ -85,11 +86,6 @@ export default function SettingsArea({ setSettingsMode }: any) {
     days,
     opacity,
     abbreviationFormat,
-    backgroundImage,
-    backgroundSize,
-    backgroundPositionX,
-    backgroundPositionY,
-    backgroundRotation,
     setAbbreviationFormat,
     setOpacity,
     setCourseCodeFontFamily,
@@ -122,12 +118,24 @@ export default function SettingsArea({ setSettingsMode }: any) {
     setDaysColor,
     setDaysTextAlign,
     setHideDays,
-    setBackgroundImage,
-    setBackgroundSize,
-    setBackgroundPositionX,
-    setBackgroundPositionY,
-    setBackgroundRotation,
   } = useSettingsStore();
+
+  const { 
+    getActiveTimetableBackground, 
+    setTimetableBackgroundImage, 
+    setTimetableBackgroundSize, 
+    setTimetableBackgroundPositionX, 
+    setTimetableBackgroundPositionY, 
+    setTimetableBackgroundRotation,
+    activeTimetableId 
+  } = useTimetableStore();
+
+  const timetableBackground = getActiveTimetableBackground();
+  const backgroundImage = timetableBackground?.backgroundImage || null;
+  const backgroundSize = timetableBackground?.backgroundSize || 300;
+  const backgroundPositionX = timetableBackground?.backgroundPositionX || 50;
+  const backgroundPositionY = timetableBackground?.backgroundPositionY || 50;
+  const backgroundRotation = timetableBackground?.backgroundRotation || 0;
   return (
     <div className="w-full h-[500px] border rounded-xl bg-[#f2f2f6] flex flex-col overflow-hidden">
       <ScrollArea className="flex-1">
@@ -150,7 +158,7 @@ export default function SettingsArea({ setSettingsMode }: any) {
                 className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
-                  if (file) {
+                  if (file && activeTimetableId) {
                     // Check file size before processing
                     const maxFileSize = 5 * 1024 * 1024; // 5MB
                     if (file.size > maxFileSize) {
@@ -162,7 +170,7 @@ export default function SettingsArea({ setSettingsMode }: any) {
                     reader.onload = (event) => {
                       const imageUrl = event.target?.result as string;
                       console.log('Setting background image:', imageUrl.substring(0, 50) + '...');
-                      setBackgroundImage(imageUrl);
+                      setTimetableBackgroundImage(activeTimetableId, imageUrl);
                     };
                     reader.onerror = (error) => {
                       console.error('Error reading file:', error);
@@ -180,11 +188,13 @@ export default function SettingsArea({ setSettingsMode }: any) {
               </label>
               <button
                 onClick={() => {
-                  setBackgroundImage(null);
-                  setBackgroundSize(100);
-                  setBackgroundPositionX(50);
-                  setBackgroundPositionY(50);
-                  setBackgroundRotation(0);
+                  if (activeTimetableId) {
+                    setTimetableBackgroundImage(activeTimetableId, null);
+                    setTimetableBackgroundSize(activeTimetableId, 300);
+                    setTimetableBackgroundPositionX(activeTimetableId, 50);
+                    setTimetableBackgroundPositionY(activeTimetableId, 50);
+                    setTimetableBackgroundRotation(activeTimetableId, 0);
+                  }
                 }}
                 className="px-3 py-1 text-xs rounded transition-colors cursor-pointer bg-[#F5F5F5] hover:bg-[#EEEEEE]"
               >
@@ -220,7 +230,11 @@ export default function SettingsArea({ setSettingsMode }: any) {
                     max={500}
                     step={5}
                     value={[backgroundSize]}
-                    onValueChange={(val: any) => setBackgroundSize(val[0])}
+                    onValueChange={(val: any) => {
+                      if (activeTimetableId) {
+                        setTimetableBackgroundSize(activeTimetableId, val[0]);
+                      }
+                    }}
                     className="w-full"
                   />
                   <p className="text-xs mt-1 text-muted-foreground">
@@ -244,7 +258,11 @@ export default function SettingsArea({ setSettingsMode }: any) {
                         max={100}
                         step={1}
                         value={[backgroundPositionX]}
-                        onValueChange={(val: any) => setBackgroundPositionX(val[0])}
+                        onValueChange={(val: any) => {
+                          if (activeTimetableId) {
+                            setTimetableBackgroundPositionX(activeTimetableId, val[0]);
+                          }
+                        }}
                         className="w-full"
                       />
                     </div>
@@ -257,7 +275,11 @@ export default function SettingsArea({ setSettingsMode }: any) {
                         max={100}
                         step={1}
                         value={[backgroundPositionY]}
-                        onValueChange={(val: any) => setBackgroundPositionY(val[0])}
+                        onValueChange={(val: any) => {
+                          if (activeTimetableId) {
+                            setTimetableBackgroundPositionY(activeTimetableId, val[0]);
+                          }
+                        }}
                         className="w-full"
                       />
                     </div>
@@ -275,7 +297,11 @@ export default function SettingsArea({ setSettingsMode }: any) {
                     max={180}
                     step={1}
                     value={[backgroundRotation]}
-                    onValueChange={(val: any) => setBackgroundRotation(val[0])}
+                    onValueChange={(val: any) => {
+                      if (activeTimetableId) {
+                        setTimetableBackgroundRotation(activeTimetableId, val[0]);
+                      }
+                    }}
                     className="w-full"
                   />
                   <p className="text-xs mt-1 text-muted-foreground">
@@ -286,14 +312,33 @@ export default function SettingsArea({ setSettingsMode }: any) {
                 {/* Reset Button */}
                 <button
                   onClick={() => {
-                    setBackgroundSize(100);
-                    setBackgroundPositionX(50);
-                    setBackgroundPositionY(50);
-                    setBackgroundRotation(0);
+                    if (activeTimetableId) {
+                      setTimetableBackgroundSize(activeTimetableId, 300);
+                      setTimetableBackgroundPositionX(activeTimetableId, 50);
+                      setTimetableBackgroundPositionY(activeTimetableId, 50);
+                      setTimetableBackgroundRotation(activeTimetableId, 0);
+                    }
                   }}
                   className="w-full px-3 py-2 text-sm rounded transition-colors cursor-pointer bg-[#F5F5F5] hover:bg-[#EEEEEE] border"
                 >
                   Reset to Default
+                </button>
+
+                {/* Save as Default Button */}
+                <button
+                  onClick={() => {
+                    if (activeTimetableId) {
+                      const { setBackgroundImage, setBackgroundSize, setBackgroundPositionX, setBackgroundPositionY, setBackgroundRotation } = useSettingsStore.getState();
+                      setBackgroundImage(backgroundImage);
+                      setBackgroundSize(backgroundSize);
+                      setBackgroundPositionX(backgroundPositionX);
+                      setBackgroundPositionY(backgroundPositionY);
+                      setBackgroundRotation(backgroundRotation);
+                    }
+                  }}
+                  className="w-full px-3 py-2 text-sm rounded transition-colors cursor-pointer bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700"
+                >
+                  Save as Default for New Timetables
                 </button>
               </div>
             )}
